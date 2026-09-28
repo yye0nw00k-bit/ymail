@@ -265,6 +265,44 @@ async function api(req, res, pathname, query) {
   if (!me) return send(res, 401, { error: '로그인이 필요해요.' });
 
 
+
+  if (pathname === '/api/ai' && method === 'POST') {
+    if (limited('yeol-ai|' + me.username)) return send(res, 429, { error: 'AI 요청이 너무 많아요. 잠시 후 다시 시도하세요.' });
+    hit('yeol-ai|' + me.username, 20, 60e3);
+    const b = await readJson(req);
+    const action = String(b.action || 'chat');
+    const message = String(b.message || '').trim().slice(0, 4000);
+    const subject = String(b.subject || '').trim().slice(0, 200);
+    const mailBody = String(b.mailBody || '').trim().slice(0, 6000);
+    const context = String(b.context || '').slice(0, 8000);
+    if (!['chat','draft','summarize'].includes(action)) return send(res, 400, {error:'잘못된 AI 작업이에요.'});
+    if (action !== 'summarize' && !message) return send(res, 400, {error:'내용을 입력하세요.'});
+    if (action === 'summarize' && !mailBody) return send(res, 400, {error:'요약할 메일이 없어요.'});
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) return send(res, 503, {error:'Render 환경변수 OPENAI_API_KEY가 설정되지 않았어요.'});
+    let prompt;
+    if(action==='summarize') prompt='Ymail의 한국어 이메일 요약 비서입니다. 메일의 핵심, 요청, 날짜를 정확하게 한국어로 요약하고 없는 사실을 만들지 마세요.\n제목: '+subject+'\n메일:\n'+mailBody;
+    else if(action==='draft') prompt='Ymail의 이메일 작성 도우미입니다. 사용자의 요청대로 자연스럽고 정중한 한국어 이메일 본문만 작성하세요. 제목이나 설명은 붙이지 마세요.\n받는 사람: '+String(b.recipient||'').slice(0,200)+'\n제목: '+subject+'\n요청: '+message+'\n참고 내용:\n'+mailBody+'\n'+context;
+    else prompt='당신은 Ymail의 Yeol AI입니다. 친절하고 유용하게 한국어로 답하세요. 메일 문맥이 제공되면 그 내용만 근거로 하고 모르는 내용은 추측하지 마세요.\n사용자 질문: '+message+'\n메일 문맥:\n'+context;
+    let response;
+    try {
+      response = await fetch('https://api.openai.com/v1/responses', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+        body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-5-mini',input:prompt,max_output_tokens:1200}),
+        signal:AbortSignal.timeout(30000)
+      });
+    } catch { return send(res,502,{error:'OpenAI에 연결하지 못했어요.'}); }
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok) {
+      const status=response.status===429?429:502;
+      return send(res,status,{error:response.status===401?'API 키가 올바르지 않아요.':(data.error&&data.error.message)||'OpenAI 요청에 실패했어요.'});
+    }
+    const answer=data.output_text||(data.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('\n');
+    if(!answer) return send(res,502,{error:'AI가 빈 답변을 반환했어요.'});
+    return send(res,200,{answer:answer.slice(0,12000)});
+  }
+
   if (pathname === '/api/users' && method === 'GET') {
     const q = String(query.get('q') || '').trim().toLowerCase().slice(0, 50);
     const result = users
