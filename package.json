@@ -1,0 +1,12 @@
+{
+  "name": "ymail",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Yeole Mail (Ymail) — 메일 / 채팅 / AI / 브라우저",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

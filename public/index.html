@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ymail — Yeole Mail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF3F4; --panel:#FFFFFF; --ink:#12262D; --mute:#5E7379; --line:#DCE5E7;
+  --teal:#0F6E7E; --teal-ink:#FFFFFF; --tint:#E0F0F2; --amber:#E8912D; --danger:#B93A0B;
+  --font:'IBM Plex Sans KR',system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#0C171B;--panel:#132227;--ink:#E4EEF0;--mute:#8CA3A9;--line:#223339;--teal:#3FB6C7;--teal-ink:#06181C;--tint:#173238;--amber:#F2A954;--danger:#F0865A}
+}
+:root[data-theme="dark"]{--bg:#0C171B;--panel:#132227;--ink:#E4EEF0;--mute:#8CA3A9;--line:#223339;--teal:#3FB6C7;--teal-ink:#06181C;--tint:#173238;--amber:#F2A954;--danger:#F0865A}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
+input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+svg{display:block}
+
+#app{height:100%;display:grid;grid-template-rows:56px 1fr;grid-template-columns:76px 1fr}
+header{grid-column:1/3;display:flex;align-items:center;gap:16px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:-.02em;min-width:150px}
+.brand small{font-weight:500;color:var(--mute);font-size:12px}
+.search{flex:1;max-width:640px;display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:999px;padding:0 16px;height:38px}
+.search input{flex:1;background:none;border:0;outline:0;height:100%;min-width:0}
+.search:focus-within{box-shadow:0 0 0 2px var(--teal)}
+.hdr-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.icon-btn{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--mute)}
+.icon-btn:hover{background:var(--bg);color:var(--ink)}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--teal);color:var(--teal-ink);display:grid;place-items:center;font-weight:600;font-size:13px}
+
+nav.rail{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 0;border-right:1px solid var(--line);background:var(--panel)}
+.rail button{width:56px;padding:8px 0 6px;border-radius:14px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--mute);position:relative}
+.rail button:hover{background:var(--bg)}
+.rail button[aria-current="page"]{background:var(--tint);color:var(--teal);font-weight:600}
+.badge{position:absolute;top:2px;right:6px;background:var(--amber);color:#1a1207;border-radius:999px;font-size:10px;font-weight:700;min-width:16px;height:16px;padding:0 4px;display:grid;place-items:center}
+
+main{min-height:0;min-width:0;position:relative}
+.view{height:100%;display:none}
+.view.on{display:block}
+
+/* mail */
+.mail{height:100%;display:grid;grid-template-columns:208px 360px 1fr}
+.folders{padding:12px 8px;border-right:1px solid var(--line);overflow:auto}
+.compose-btn{width:100%;background:var(--teal);color:var(--teal-ink);border-radius:16px;height:48px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px}
+.compose-btn:hover{filter:brightness(1.08)}
+.folder{width:100%;display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-radius:999px;color:var(--ink);text-align:left}
+.folder:hover{background:var(--panel)}
+.folder[aria-current="true"]{background:var(--tint);color:var(--teal);font-weight:600}
+.folder span:last-child{font-size:12px;color:var(--mute)}
+.list{border-right:1px solid var(--line);overflow:auto;background:var(--panel)}
+.list-head{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600;position:sticky;top:0;background:var(--panel);display:flex;justify-content:space-between}
+.list-head span{font-weight:400;color:var(--mute)}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:12px 16px;border-bottom:1px solid var(--line);cursor:pointer;width:100%;text-align:left}
+.row:hover{background:var(--bg)}
+.row[aria-current="true"]{background:var(--tint)}
+.row .from{font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.unread .from,.row.unread .subj{font-weight:700}
+.row .time{font-size:12px;color:var(--mute)}
+.row .subj{grid-column:1/2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .snip{grid-column:1/2;color:var(--mute);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .star{grid-column:2/3;grid-row:2/4;align-self:center;color:var(--mute);width:28px;height:28px;border-radius:50%;display:grid;place-items:center}
+.row .star.on{color:var(--amber)}
+.reader{overflow:auto;padding:0}
+.reader-inner{max-width:760px;padding:24px 32px 48px}
+.reader h2{margin:0 0 4px;font-size:22px;letter-spacing:-.02em;line-height:1.3}
+.meta{color:var(--mute);font-size:13px;margin-bottom:20px}
+.body{white-space:pre-wrap;font-size:15px;line-height:1.75;max-width:66ch}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 20px}
+.btn{height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--bg)}
+.btn.primary{background:var(--teal);color:var(--teal-ink);border-color:var(--teal);font-weight:600}
+.btn.ai{border-color:var(--teal);color:var(--teal)}
+.summary{background:var(--tint);border-left:3px solid var(--teal);padding:12px 16px;border-radius:0 12px 12px 0;margin-bottom:20px;font-size:14px}
+.empty{height:100%;display:grid;place-items:center;color:var(--mute);text-align:center;padding:24px}
+.back{display:none}
+
+/* compose */
+.compose{position:fixed;right:24px;bottom:0;width:520px;max-width:100%;background:var(--panel);border:1px solid var(--line);border-radius:14px 14px 0 0;box-shadow:0 8px 32px rgba(8,30,36,.22);display:none;flex-direction:column;z-index:20;margin-bottom:env(safe-area-inset-bottom,0px)}
+.compose.on{display:flex}
+.compose .top{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--ink);color:var(--panel);border-radius:14px 14px 0 0;font-weight:600}
+.compose .top button{color:inherit}
+.compose input.f,.compose textarea{border:0;border-bottom:1px solid var(--line);padding:10px 14px;background:transparent;outline:0;width:100%}
+.compose textarea{height:260px;resize:none;border-bottom:0;line-height:1.7}
+.compose .foot{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line);align-items:center}
+.compose .foot .sp{flex:1}
+
+/* chat */
+.chat{height:100%;display:grid;grid-template-columns:280px 1fr}
+.contacts{border-right:1px solid var(--line);background:var(--panel);overflow:auto}
+.contact{display:flex;gap:12px;align-items:center;padding:12px 16px;width:100%;text-align:left;border-bottom:1px solid var(--line)}
+.contact:hover{background:var(--bg)}
+.contact[aria-current="true"]{background:var(--tint)}
+.contact .av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:600;color:#fff;flex:none}
+.contact .nm{font-weight:600}
+.contact .last{color:var(--mute);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
+.thread{display:flex;flex-direction:column;min-height:0}
+.thread-head{padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel);font-weight:600;display:flex;align-items:center;gap:8px}
+.msgs{flex:1;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:8px}
+.bubble{max-width:min(70%,460px);padding:8px 14px;border-radius:18px;background:var(--panel);border:1px solid var(--line);align-self:flex-start;overflow-wrap:anywhere}
+.bubble.me{align-self:flex-end;background:var(--teal);color:var(--teal-ink);border-color:var(--teal)}
+.composer{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);background:var(--panel)}
+.composer input{flex:1;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--bg);padding:0 16px;outline:0;min-width:0}
+.composer input:focus{border-color:var(--teal)}
+
+/* ai */
+.ai{height:100%;display:flex;flex-direction:column;align-items:center}
+.ai .msgs{width:100%;max-width:760px}
+.ai .composer{width:100%;max-width:760px;border:1px solid var(--line);border-radius:999px;margin:0 0 16px;padding:6px 8px}
+.ai .composer input{border:0;background:transparent}
+.chips{display:flex;gap:8px;flex-wrap:wrap;width:100%;max-width:760px;padding:0 20px 12px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:6px 14px;font-size:13px}
+.chip:hover{border-color:var(--teal);color:var(--teal)}
+.ai-hello{width:100%;max-width:760px;padding:28px 20px 0}
+.ai-hello h2{margin:0;font-size:26px;letter-spacing:-.02em}
+.ai-hello p{margin:4px 0 0;color:var(--mute)}
+.bubble.ai{background:var(--tint);border-color:transparent;max-width:min(90%,600px);white-space:pre-wrap}
+.bubble .use{display:block;margin-top:10px}
+
+/* browser */
+.browser{height:100%;display:flex;flex-direction:column}
+.tabs{display:flex;gap:4px;padding:8px 12px 0;background:var(--bg);overflow-x:auto}
+.tab{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px 10px 0 0;max-width:200px;min-width:110px;color:var(--mute);background:transparent;flex:none}
+.tab[aria-current="true"]{background:var(--panel);color:var(--ink)}
+.tab span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}
+.tab .x{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:14px;line-height:1}
+.tab .x:hover{background:var(--line)}
+.addr{display:flex;gap:8px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);align-items:center}
+.addr form{flex:1;display:flex}
+.addr input{flex:1;height:36px;border-radius:999px;border:1px solid var(--line);background:var(--bg);padding:0 16px;outline:0}
+.addr input:focus{border-color:var(--teal)}
+.page{flex:1;overflow:auto;padding:32px 24px;background:var(--panel)}
+.page-in{max-width:720px;margin:0 auto}
+.page h2{margin:0 0 6px;font-size:26px;letter-spacing:-.02em}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin-top:24px}
+.tile{border:1px solid var(--line);border-radius:14px;padding:16px 12px;text-align:center;background:var(--bg)}
+.tile:hover{border-color:var(--teal)}
+.tile b{display:block;margin-top:6px;font-weight:600}
+.res{padding:14px 0;border-bottom:1px solid var(--line)}
+.res .u{font-size:12px;color:var(--mute)}
+.res .h{color:var(--teal);font-size:17px;font-weight:600}
+.note{background:var(--tint);border-radius:12px;padding:12px 16px;margin:16px 0;font-size:13px}
+
+
+#auth{position:fixed;inset:0;z-index:100;background:var(--bg);display:none;place-items:center;padding:20px;overflow:auto}
+#auth.on{display:grid}
+.auth-card{width:100%;max-width:400px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:32px 28px}
+.auth-card .brand{margin-bottom:20px}
+.auth-card h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em}
+.auth-card p.sub{margin:0 0 20px;color:var(--mute)}
+.seg{display:flex;background:var(--bg);border-radius:999px;padding:3px;margin-bottom:20px}
+.seg button{flex:1;height:34px;border-radius:999px;color:var(--mute)}
+.seg button[aria-selected="true"]{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(8,30,36,.15)}
+.field{display:block;margin-bottom:14px}
+.field span.l{display:block;font-size:13px;color:var(--mute);margin-bottom:4px}
+.field input{width:100%;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 12px;outline:0}
+.field input:focus{border-color:var(--teal);box-shadow:0 0 0 2px var(--tint)}
+.idrow{display:flex;align-items:center;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding-right:12px}
+.idrow:focus-within{border-color:var(--teal);box-shadow:0 0 0 2px var(--tint)}
+.idrow input{border:0;background:transparent;box-shadow:none!important;flex:1;min-width:0}
+.idrow em{font-style:normal;color:var(--mute)}
+.err{color:var(--danger);font-size:13px;min-height:20px;margin:0 0 10px}
+.auth-card .btn.primary{width:100%;height:44px;justify-content:center}
+.umenu{position:fixed;top:52px;right:12px;width:260px;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px rgba(8,30,36,.2);padding:14px;z-index:40;display:none}
+.umenu.on{display:block}
+.umenu .n{font-weight:600}.umenu .e{color:var(--mute);font-size:13px;margin-bottom:12px;overflow-wrap:anywhere}
+.umenu .btn{width:100%;justify-content:center;margin-top:6px}
+.modal{position:fixed;inset:0;background:rgba(6,20,24,.5);z-index:60;display:none;place-items:center;padding:16px}
+.modal.on{display:grid}
+.modal .box{background:var(--panel);border-radius:16px;width:100%;max-width:720px;max-height:85vh;overflow:auto;padding:20px 24px}
+.modal h2{margin:0 0 12px;font-size:20px}
+.utable{width:100%;border-collapse:collapse}
+.utable th,.utable td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-size:13px}
+.utable th{color:var(--mute);font-weight:500}
+.tag{font-size:11px;background:var(--tint);color:var(--teal);border-radius:999px;padding:1px 8px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--panel);padding:10px 18px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+#toast.on{opacity:1}
+
+@media (max-width:1000px){
+  .mail{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .folders{display:flex;gap:6px;padding:8px 12px;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto}
+  .compose-btn{width:auto;flex:none;padding:0 16px;height:36px;margin:0;border-radius:999px}
+  .folder{width:auto;flex:none;padding:6px 12px;gap:6px}
+  .list{border-right:0}
+  .reader{position:absolute;inset:0;background:var(--bg);display:none;z-index:5;top:auto}
+  .mail.reading .reader{display:block;top:0}
+  .back{display:inline-flex;margin:12px 0 0 12px}
+  .reader-inner{padding:12px 20px 40px}
+  .chat{grid-template-columns:1fr}
+  .chat.open .contacts{display:none}
+  .chat:not(.open) .thread{display:none}
+}
+@media (max-width:720px){
+  #app{grid-template-columns:1fr;grid-template-rows:56px 1fr 60px}
+  header{grid-column:1}
+  .brand small,.brand-name-full{display:none}
+  .brand{min-width:0}
+  nav.rail{grid-row:3;flex-direction:row;justify-content:space-around;border-right:0;border-top:1px solid var(--line);padding:4px 0}
+  .compose{right:0;width:100%;border-radius:0;top:0;border:0}
+  .compose .top{border-radius:0}
+  .compose textarea{flex:1;height:auto}
+  .hdr-actions .theme{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="9" fill="var(--teal)"/>
+        <path d="M6 12c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M6 18c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".7"/>
+        <path d="M6 24c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".4"/>
+      </svg>
+      <span>Ymail <small class="brand-name-full">Yeole Mail</small></span>
+    </div>
+    <label class="search" id="searchBox">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="q" type="search" placeholder="메일 검색" aria-label="메일 검색" autocomplete="off">
+    </label>
+    <div class="hdr-actions">
+      <button class="icon-btn theme" id="themeBtn" title="테마 전환" aria-label="테마 전환">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+      </button>
+      <button class="avatar" id="avatarBtn" aria-label="계정 메뉴" aria-haspopup="true">나</button>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="앱">
+    <button data-view="mail" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>메일<i class="badge" id="mailBadge">0</i></button>
+    <button data-view="chat"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>채팅</button>
+    <button data-view="ai"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16v4M17 18h4"/></svg>AI</button>
+    <button data-view="browser"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>브라우저</button>
+  </nav>
+
+  <main>
+    <!-- MAIL -->
+    <section class="view on" id="v-mail">
+      <div class="mail" id="mailGrid">
+        <aside class="folders" id="folders"></aside>
+        <div class="list" id="list"></div>
+        <article class="reader" id="reader"></article>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section class="view" id="v-chat">
+      <div class="chat" id="chatGrid">
+        <div class="contacts" id="contacts"></div>
+        <div class="thread">
+          <div class="thread-head"><button class="btn back" id="chatBack" style="margin:0">← 목록</button><span id="threadName"></span></div>
+          <div class="msgs" id="chatMsgs"></div>
+          <form class="composer" id="chatForm"><input id="chatIn" placeholder="메시지 입력" aria-label="메시지 입력" autocomplete="off"><button class="btn primary">보내기</button></form>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI -->
+    <section class="view" id="v-ai">
+      <div class="ai">
+        <div class="ai-hello"><h2>Yeol AI</h2><p>메일을 요약하고, 답장을 쓰고, 새 메일 초안을 만들어 드려요.</p></div>
+        <div class="msgs" id="aiMsgs"></div>
+        <div class="chips" id="chips"></div>
+        <form class="composer" id="aiForm"><input id="aiIn" placeholder="Yeol AI에게 물어보기" aria-label="Yeol AI에게 물어보기" autocomplete="off"><button class="btn primary">보내기</button></form>
+      </div>
+    </section>
+
+    <!-- BROWSER -->
+    <section class="view" id="v-browser">
+      <div class="browser">
+        <div class="tabs" id="tabs"></div>
+        <div class="addr">
+          <button class="icon-btn" id="homeBtn" title="시작 페이지" aria-label="시작 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 11l8-7 8 7v9H4z"/></svg></button>
+          <form id="addrForm"><input id="addrIn" placeholder="검색어 또는 주소 입력" aria-label="주소창" autocomplete="off"></form>
+        </div>
+        <div class="page" id="page"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- compose -->
+<div class="compose" id="compose" role="dialog" aria-label="새 메일">
+  <div class="top"><span>새 메일</span><button id="cClose" aria-label="닫기">✕</button></div>
+  <input class="f" id="cTo" placeholder="받는 사람" aria-label="받는 사람">
+  <input class="f" id="cSub" placeholder="제목" aria-label="제목">
+  <textarea id="cBody" placeholder="내용을 입력하세요" aria-label="내용"></textarea>
+  <div class="foot">
+    <button class="btn primary" id="cSend">보내기</button>
+    <button class="btn ai" id="cAi">AI로 초안 쓰기</button>
+    <span class="sp"></span>
+    <button class="btn" id="cDiscard">버리기</button>
+  </div>
+</div>
+<div class="umenu" id="umenu" role="menu">
+  <div class="n" id="umName"></div><div class="e" id="umEmail"></div>
+  <button class="btn" id="umAdmin" style="display:none">관리자 패널</button>
+  <button class="btn" id="umLogout">로그아웃</button>
+</div>
+<div class="modal" id="adminModal" role="dialog" aria-label="관리자 패널"><div class="box">
+  <div style="display:flex;justify-content:space-between;align-items:center"><h2>사용자 관리</h2><button class="icon-btn" id="adminClose" aria-label="닫기">✕</button></div>
+  <div id="adminBody">불러오는 중…</div>
+</div></div>
+<div id="auth" class="on"><form class="auth-card" id="authForm" novalidate>
+  <div class="brand">
+    <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--teal)"/><path d="M6 12c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round"/><path d="M6 18c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".7"/><path d="M6 24c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".4"/></svg>
+    <span>Ymail <small>Yeole Mail</small></span>
+  </div>
+  <div class="seg" role="tablist"><button type="button" role="tab" id="tabLogin" aria-selected="true">로그인</button><button type="button" role="tab" id="tabSignup" aria-selected="false">회원가입</button></div>
+  <label class="field" id="fName" style="display:none"><span class="l">이름</span><input id="aName" autocomplete="name" maxlength="40"></label>
+  <label class="field"><span class="l">아이디</span><div class="idrow"><input id="aUser" autocomplete="username" autocapitalize="none" spellcheck="false"><em>@ymail.com</em></div></label>
+  <label class="field"><span class="l">비밀번호</span><input id="aPass" type="password" autocomplete="current-password"></label>
+  <label class="field" id="fPass2" style="display:none"><span class="l">비밀번호 확인</span><input id="aPass2" type="password" autocomplete="new-password"></label>
+  <p class="err" id="authErr" role="alert"></p>
+  <button class="btn primary" id="authSubmit">로그인</button>
+</form></div>
+<div id="toast" role="status"></div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let toastT;
+function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('on'),2200)}
+let ME='', USER=null;
+const K=n=>'ymail:'+ME+':'+n;
+
+/* ---------- state ---------- */
+let mails=[];
+async function loadMails(){
+  try{
+    const r=await api('/api/mail');
+    mails=(r.mails||[]);
+    renderMail();
+  }catch(e){toast(e.message)}
+}
+function save(){/* 서버 저장 방식: 보낼 때 API가 저장합니다. */}
+
+let folder='inbox', sel=null, query='';
+const folderDefs=[['inbox','받은편지함'],['starred','별표편지함'],['sent','보낸편지함'],['drafts','임시보관함'],['trash','휴지통']];
+const inFolder=(m,f)=>f==='starred'?(m.star&&m.folder!=='trash'):m.folder===f;
+
+/* ---------- view switching ---------- */
+function show(v){
+  $$('.view').forEach(e=>e.classList.toggle('on',e.id==='v-'+v));
+  $$('.rail button').forEach(b=>b.toggleAttribute('aria-current',b.dataset.view===v)||b.removeAttribute('aria-current'));
+  $$('.rail button').forEach(b=>{if(b.dataset.view===v)b.setAttribute('aria-current','page')});
+  $('#searchBox').style.visibility=v==='mail'?'visible':'hidden';
+}
+$$('.rail button').forEach(b=>b.onclick=()=>show(b.dataset.view));
+
+/* ---------- mail ---------- */
+function renderFolders(){
+  $('#folders').innerHTML=`<button class="compose-btn" id="newMail"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>편지 쓰기</button>`+
+   folderDefs.map(([k,n])=>{
+     const c=k==='inbox'?mails.filter(m=>m.folder==='inbox'&&!m.read).length:(k==='drafts'?mails.filter(m=>m.folder==='drafts').length:'');
+     return `<button class="folder" data-f="${k}" aria-current="${k===folder}"><span>${n}</span><span>${c||''}</span></button>`}).join('');
+  $('#newMail').onclick=()=>openCompose();
+  $$('#folders .folder').forEach(b=>b.onclick=()=>{folder=b.dataset.f;sel=null;$('#mailGrid').classList.remove('reading');renderMail()});
+  const u=mails.filter(m=>m.folder==='inbox'&&!m.read).length;
+  const bd=$('#mailBadge');bd.textContent=u;bd.style.display=u?'grid':'none';
+}
+function renderList(){
+  const items=mails.filter(m=>inFolder(m,folder)&&(!query||(m.subj+m.from+m.body).toLowerCase().includes(query)));
+  const name=folderDefs.find(f=>f[0]===folder)[1];
+  $('#list').innerHTML=`<div class="list-head">${name}<span>${items.length}개</span></div>`+
+   (items.length?items.map(m=>`<div class="row ${m.read?'':'unread'}" role="button" tabindex="0" data-id="${m.id}" aria-current="${m.id===sel}">
+     <span class="from">${esc(m.folder==='sent'?'받는사람: '+(m.to||''):m.from)}</span><span class="time">${esc(m.time)}</span>
+     <span class="subj">${esc(m.subj||'(제목 없음)')}</span>
+     <button class="star ${m.star?'on':''}" data-star="${m.id}" aria-label="별표">${m.star?'★':'☆'}</button>
+     <span class="snip">${esc(m.body.replace(/\n+/g,' ').slice(0,80))}</span></div>`).join('')
+   :`<div class="empty">${query?'검색 결과가 없어요.':'이 폴더에는 메일이 없어요.'}</div>`);
+  $$('#list .row').forEach(r=>{
+    const open=()=>{sel=+r.dataset.id;const m=mails.find(x=>x.id===sel);if(m.folder==='drafts'){openCompose(m);return}
+      m.read=true;api('/api/mail/read',{method:'POST',body:{id:m.id}}).catch(()=>{});$('#mailGrid').classList.add('reading');renderMail()};
+    r.onclick=e=>{if(e.target.closest('[data-star]'))return;open()};
+    r.onkeydown=e=>{if(e.key==='Enter')open()};
+  });
+  $$('#list [data-star]').forEach(b=>b.onclick=()=>{const m=mails.find(x=>x.id==+b.dataset.star);m.star=!m.star;save();renderMail()});
+}
+function renderReader(){
+  const m=mails.find(x=>x.id===sel);
+  if(!m){$('#reader').innerHTML='<div class="empty">메일을 선택하면 여기에 내용이 표시돼요.</div>';return}
+  $('#reader').innerHTML=`<button class="btn back" id="backBtn">← 목록</button><div class="reader-inner">
+   <h2>${esc(m.subj||'(제목 없음)')}</h2>
+   <div class="meta">${esc(m.from)} &lt;${esc(m.addr)}&gt; · ${esc(m.time)}</div>
+   <div class="actions">
+     <button class="btn primary" id="rReply">답장</button>
+     <button class="btn ai" id="rSum">AI 요약</button>
+     <button class="btn" id="rStar">${m.star?'별표 해제':'별표'}</button>
+     <button class="btn" id="rDel">${m.folder==='trash'?'완전 삭제':'삭제'}</button>
+   </div>
+   <div id="sumBox"></div>
+   <div class="body">${esc(m.body)}</div></div>`;
+  $('#backBtn').onclick=()=>{$('#mailGrid').classList.remove('reading')};
+  $('#rReply').onclick=()=>openCompose({to:m.addr,subj:'Re: '+m.subj.replace(/^Re:\s*/,''),body:'\n\n\n--- '+m.from+' 님의 메시지 ---\n'+m.body.split('\n').map(l=>'> '+l).join('\n')});
+  $('#rStar').onclick=async()=>{m.star=!m.star;try{await api('/api/mail/star',{method:'POST',body:{id:m.id,star:m.star}});await loadMails()}catch(e){toast(e.message)}};
+  $('#rDel').onclick=async()=>{try{await api('/api/mail/move-trash',{method:'POST',body:{id:m.id}});sel=null;$('#mailGrid').classList.remove('reading');await loadMails();toast('삭제했어요')}catch(e){toast(e.message)}};
+  $('#rSum').onclick=()=>{$('#sumBox').innerHTML=`<div class="summary"><b>요약</b><br>${esc(summarize(m))}</div>`};
+}
+function summarize(m){
+  const s=m.body.replace(/\n+/g,' ').split(/(?<=[.!?요다])\s+/).filter(x=>x.length>8);
+  return (s.slice(0,2).join(' ')||m.body).slice(0,180);
+}
+function renderMail(){renderFolders();renderList();renderReader()}
+$('#q').oninput=e=>{query=e.target.value.trim().toLowerCase();sel=null;renderList();renderReader()};
+
+/* compose */
+let draftId=null;
+function openCompose(d={}){
+  draftId=d.id||null;
+  $('#cTo').value=d.to||'';$('#cSub').value=d.subj||'';$('#cBody').value=d.body||'';
+  $('#compose').classList.add('on');
+  ($('#cTo').value?$('#cBody'):$('#cTo')).focus();
+}
+function closeCompose(saveDraft){
+  const to=$('#cTo').value.trim(),subj=$('#cSub').value.trim(),body=$('#cBody').value;
+  if(saveDraft&&(to||subj||body.trim())){
+    const ex=draftId&&mails.find(m=>m.id===draftId);
+    if(ex)Object.assign(ex,{to,subj,body});
+    else mails.push({id:Date.now(),from:'나',addr:ME,to,subj,body,time:'방금',read:true,star:false,folder:'drafts'});
+    save();toast('임시보관함에 저장했어요');
+  }else if(draftId){mails=mails.filter(m=>m.id!==draftId);save()}
+  $('#compose').classList.remove('on');draftId=null;renderMail();
+}
+$('#cClose').onclick=()=>closeCompose(true);
+$('#cDiscard').onclick=()=>{$('#compose').classList.remove('on');if(draftId){mails=mails.filter(m=>m.id!==draftId);save()}draftId=null;renderMail()};
+$('#cSend').onclick=async()=>{
+  const to=$('#cTo').value.trim(),subj=$('#cSub').value.trim(),body=$('#cBody').value.trim();
+  if(!/^\S+@\S+\.\S+$/.test(to)){toast('받는 사람 주소를 올바르게 입력하세요');$('#cTo').focus();return}
+  if(!body){toast('내용을 입력하세요');$('#cBody').focus();return}
+  const btn=$('#cSend');btn.disabled=true;
+  try{
+    await api('/api/mail/send',{method:'POST',body:{to,subj,body}});
+    $('#compose').classList.remove('on');draftId=null;folder='sent';sel=null;await loadMails();toast('메일을 보냈어요');
+  }catch(e){toast(e.message)}finally{btn.disabled=false}
+};
+$('#cAi').onclick=()=>{
+  const subj=$('#cSub').value.trim();
+  $('#cBody').value=draftBody(subj||'문의 드립니다',$('#cTo').value);
+  toast('AI 초안을 넣었어요. 내용을 확인하고 보내세요');
+};
+
+/* ---------- chat ---------- */
+let people=[];
+let chatSel='';
+let chatMessages=[];
+async function loadChatPeople(){
+  try{
+    const r=await api('/api/chat/people');
+    people=r.users||[];
+    if(!chatSel && people.length) chatSel=people[0].username;
+    await loadChatMessages();
+  }catch(e){toast(e.message)}
+}
+async function loadChatMessages(){
+  if(!chatSel){renderChat();return}
+  try{
+    const r=await api('/api/chat?with='+encodeURIComponent(chatSel));
+    chatMessages=r.messages||[];
+    renderChat();
+  }catch(e){toast(e.message)}
+}
+function renderChat(){
+  $('#contacts').innerHTML=people.length?people.map(p=>`<button class="contact" data-id="${esc(p.username)}" aria-current="${p.username===chatSel}"><span class="av">${esc(p.name?.[0]||p.username[0])}</span><span><span class="nm">${esc(p.name||p.username)}</span><br><span class="last">${esc(p.email)}</span></span></button>`).join(''):`<div class="empty">아직 다른 Ymail 사용자가 없어요.</div>`;
+  $$('#contacts .contact').forEach(b=>b.onclick=async()=>{chatSel=b.dataset.id;$('#chatGrid').classList.add('open');await loadChatMessages()});
+  const p=people.find(x=>x.username===chatSel);
+  $('#threadName').textContent=p?(p.name||p.username):'대화 상대 없음';
+  $('#chatMsgs').innerHTML=chatMessages.length?chatMessages.map(m=>`<div class="bubble ${m.from===USER.username?'me':''}">${esc(m.body)}<div style="font-size:10px;opacity:.55;margin-top:4px">${new Date(m.createdAt).toLocaleString('ko-KR')}</div></div>`).join(''):`<div class="empty">메시지를 보내 대화를 시작해 보세요.</div>`;
+  const el=$('#chatMsgs');el.scrollTop=el.scrollHeight;
+}
+$('#chatBack').onclick=()=>$('#chatGrid').classList.remove('open');
+$('#chatForm').onsubmit=async e=>{
+  e.preventDefault();const v=$('#chatIn').value.trim();if(!v||!chatSel)return;
+  try{await api('/api/chat',{method:'POST',body:{to:chatSel,body:v}});$('#chatIn').value='';await loadChatMessages();}catch(x){toast(x.message)}
+};
+let chatPoll=null;
+function startChatPoll(){clearInterval(chatPoll);chatPoll=setInterval(()=>{if(USER&&$('#v-chat').classList.contains('on')&&chatSel)loadChatMessages()},2500)}
+
+/* ---------- AI (rule-based prototype) ---------- */
+const chips=['안 읽은 메일 요약해줘','안 읽은 메일 몇 개야?','최근 메일에 답장 초안 써줘','회의 일정 조정 메일 써줘'];
+function draftBody(topic,to){
+  const who=to&&to.includes('@')?to.split('@')[0]:'담당자';
+  return `${who}님, 안녕하세요.\n\n"${topic}" 건으로 연락드립니다. 아래 내용을 확인해 주시면 감사하겠습니다.\n\n- 요청 사항: \n- 희망 일정: \n\n편하신 시간에 회신 부탁드립니다.\n\n감사합니다.`;
+}
+function aiReply(q){
+  const unread=mails.filter(m=>m.folder==='inbox'&&!m.read);
+  const latest=mails.filter(m=>m.folder==='inbox').at(0);
+  if(/몇|개수|개야/.test(q)&&/안\s*읽|새/.test(q))return {t:`안 읽은 메일이 ${unread.length}개 있어요.`};
+  if(/요약/.test(q)){
+    if(!unread.length)return {t:'안 읽은 메일이 없어요. 받은편지함이 깔끔하네요!'};
+    return {t:'안 읽은 메일 요약이에요.\n\n'+unread.map(m=>`• ${m.from} — ${m.subj}\n  ${summarize(m)}`).join('\n\n')};
+  }
+  if(/답장|초안/.test(q)&&latest){
+    return {t:`"${latest.subj}" 메일에 대한 답장 초안이에요.`,draft:{to:latest.addr,subj:'Re: '+latest.subj,body:`${latest.from}님, 안녕하세요.\n\n메일 잘 받았습니다. 내용 확인했고 아래와 같이 회신드립니다.\n\n- 확인했습니다.\n- 필요한 추가 사항이 있으면 알려주세요.\n\n감사합니다.`}};
+  }
+  if(/회의|일정/.test(q))return {t:'일정 조정 메일 초안이에요.',draft:{to:'',subj:'회의 일정 조정 요청',body:'안녕하세요.\n\n예정된 회의 일정을 조정하고 싶어 연락드립니다. 아래 시간대 중 가능한 시간을 알려주세요.\n\n- 후보 1: \n- 후보 2: \n\n불편을 드려 죄송하고, 협조에 감사드립니다.'}};
+  if(/써|작성|보내/.test(q)){const topic=q.replace(/(메일|이메일|써줘|써 줘|작성해줘|작성|보내줘|좀)/g,'').trim()||'문의';return {t:`"${topic}" 주제로 메일 초안을 만들었어요.`,draft:{to:'',subj:topic,body:draftBody(topic,'')}}}
+  return {t:'이런 걸 도와드릴 수 있어요.\n\n• 안 읽은 메일 요약\n• 최근 메일에 답장 초안 작성\n• 새 메일 초안 작성 (예: "환불 요청 메일 써줘")'};
+}
+let aiLog=[];
+function renderAI(){
+  $('#aiMsgs').innerHTML=aiLog.map((m,i)=>m.w==='me'?`<div class="bubble me">${esc(m.t)}</div>`:
+   `<div class="bubble ai">${esc(m.t)}${m.draft?`<button class="btn primary use" data-i="${i}">작성창에서 열기</button>`:''}</div>`).join('');
+  $$('#aiMsgs .use').forEach(b=>b.onclick=()=>{show('mail');openCompose(aiLog[+b.dataset.i].draft)});
+  const el=$('#aiMsgs');el.scrollTop=el.scrollHeight;
+}
+function askAI(q){
+  aiLog.push({w:'me',t:q});const r=aiReply(q);renderAI();
+  setTimeout(()=>{aiLog.push({w:'ai',t:r.t,draft:r.draft});renderAI()},450);
+}
+$('#chips').innerHTML=chips.map(c=>`<button class="chip">${esc(c)}</button>`).join('');
+$$('#chips .chip').forEach(b=>b.onclick=()=>askAI(b.textContent));
+$('#aiForm').onsubmit=e=>{e.preventDefault();const v=$('#aiIn').value.trim();if(!v)return;$('#aiIn').value='';askAI(v)};
+
+/* ---------- browser ---------- */
+let tabs=[{id:1,url:'ymail://start',title:'시작 페이지'}],tabSel=1,tabSeq=1;
+const isUrl=s=>/^(https?:\/\/|www\.)/i.test(s)||/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(s);
+function renderTabs(){
+  $('#tabs').innerHTML=tabs.map(t=>`<div class="tab" role="button" tabindex="0" data-id="${t.id}" aria-current="${t.id===tabSel}"><span class="t">${esc(t.title)}</span>${tabs.length>1?`<button class="x" data-x="${t.id}" aria-label="탭 닫기">×</button>`:''}</div>`).join('')+
+   `<button class="icon-btn" id="newTab" aria-label="새 탭" style="align-self:center">＋</button>`;
+  $$('#tabs .tab').forEach(el=>{el.onclick=e=>{if(e.target.closest('[data-x]'))return;tabSel=+el.dataset.id;renderBrowser()}});
+  $$('#tabs [data-x]').forEach(b=>b.onclick=()=>{const id=+b.dataset.x;const i=tabs.findIndex(t=>t.id===id);tabs.splice(i,1);if(tabSel===id)tabSel=tabs[Math.max(0,i-1)].id;renderBrowser()});
+  $('#newTab').onclick=()=>{tabs.push({id:++tabSeq,url:'ymail://start',title:'시작 페이지'});tabSel=tabSeq;renderBrowser()};
+}
+function renderPage(){
+  const t=tabs.find(x=>x.id===tabSel);const el=$('#page');
+  $('#addrIn').value=t.url==='ymail://start'?'':t.url;
+  if(t.url==='ymail://start'){
+    el.innerHTML=`<div class="page-in"><h2>어디로 갈까요?</h2><p style="color:var(--mute);margin:0">검색어나 주소를 위 주소창에 입력하세요.</p>
+    <div class="tiles">${[['메일','mail'],['채팅','chat'],['Yeol AI','ai']].map(([n,v])=>`<button class="tile" data-go="${v}"><b>${n}</b></button>`).join('')}
+    <button class="tile" data-open="https://www.wikipedia.org"><b>위키백과</b></button></div></div>`;
+    $$('#page [data-go]').forEach(b=>b.onclick=()=>show(b.dataset.go));
+    $$('#page [data-open]').forEach(b=>b.onclick=()=>navigate(b.dataset.open));
+  }else if(t.url.startsWith('search:')){
+    const q=t.url.slice(7),r=t.results||{state:'loading'};
+    let inner;
+    if(r.state==='loading')inner='<p style="color:var(--mute)">검색하는 중…</p>';
+    else if(r.state==='err')inner=`<div class="note">${esc(r.msg)}</div>`;
+    else if(!r.items.length)inner='<p style="color:var(--mute)">검색 결과가 없어요. 다른 검색어로 시도해 보세요.</p>';
+    else inner=r.items.map(x=>`<div class="res"><div class="u">${esc(x.host)}</div><a class="h" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.title||x.url)}</a><div>${esc(x.desc)}</div></div>`).join('');
+    el.innerHTML=`<div class="page-in"><h2>“${esc(q)}” 검색 결과</h2>${inner}</div>`;
+  }else{
+    const href=/^https?:/i.test(t.url)?t.url:'https://'+t.url;
+    el.innerHTML=`<div class="page-in"><h2>${esc(t.title)}</h2>
+    <div class="note">이 프로토타입은 외부 사이트를 안에 띄울 수 없어요. 대부분의 사이트가 iframe 삽입을 막기 때문에, 실제 브라우저 기능은 서버 프록시나 별도 앱(Electron 등)이 필요해요.</div>
+    <a class="btn primary" href="${esc(href)}" target="_blank" rel="noopener noreferrer">새 창에서 열기</a></div>`;
+  }
+}
+function renderBrowser(){renderTabs();renderPage()}
+function navigate(v){
+  const t=tabs.find(x=>x.id===tabSel);v=v.trim();if(!v){t.url='ymail://start';t.title='시작 페이지'}
+  else if(isUrl(v)){t.url=v.replace(/^https?:\/\//,'');t.title=t.url.split('/')[0]}
+  else{t.url='search:'+v;t.title=v;t.results={state:'loading'};runSearch(t,v)}
+  renderBrowser();
+}
+async function runSearch(t,q){
+  try{const r=await api('/api/search?q='+encodeURIComponent(q));t.results={state:'ok',items:r.results}}
+  catch(e){t.results={state:'err',msg:e.message}}
+  if(t.url==='search:'+q)renderBrowser();
+}
+$('#addrForm').onsubmit=e=>{e.preventDefault();navigate($('#addrIn').value)};
+$('#homeBtn').onclick=()=>navigate('');
+
+/* ---------- theme ---------- */
+$('#themeBtn').onclick=()=>{
+  const r=document.documentElement;
+  const dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+  r.dataset.theme=dark?'light':'dark';
+};
+
+/* ---------- auth ---------- */
+async function api(path,opts={}){
+  const init={credentials:'same-origin',method:opts.method||'GET',headers:{'Content-Type':'application/json'}};
+  if(opts.body)init.body=JSON.stringify(opts.body);
+  let r;try{r=await fetch(path,init)}catch(e){throw new Error('서버에 연결할 수 없어요. server.js가 실행 중인지 확인하세요.')}
+  let j={};try{j=await r.json()}catch(e){}
+  if(!r.ok)throw Object.assign(new Error(j.error||'요청에 실패했어요'),{status:r.status});
+  return j;
+}
+let authMode='login';
+function setAuthMode(m){
+  authMode=m;const su=m==='signup';
+  $('#tabLogin').setAttribute('aria-selected',!su);$('#tabSignup').setAttribute('aria-selected',su);
+  $('#fName').style.display=su?'':'none';$('#fPass2').style.display=su?'':'none';
+  $('#aPass').autocomplete=su?'new-password':'current-password';
+  $('#authSubmit').textContent=su?'계정 만들기':'로그인';$('#authErr').textContent='';
+}
+$('#tabLogin').onclick=()=>setAuthMode('login');
+$('#tabSignup').onclick=()=>setAuthMode('signup');
+$('#authForm').onsubmit=async e=>{
+  e.preventDefault();const err=$('#authErr');err.textContent='';
+  const username=$('#aUser').value.trim(),password=$('#aPass').value;
+  if(!username||!password){err.textContent='아이디와 비밀번호를 입력하세요.';return}
+  const body={username,password};
+  if(authMode==='signup'){
+    body.name=$('#aName').value.trim();
+    if(!body.name){err.textContent='이름을 입력하세요.';return}
+    if(password!==$('#aPass2').value){err.textContent='비밀번호 확인이 일치하지 않아요.';return}
+  }
+  const btn=$('#authSubmit');btn.disabled=true;
+  try{const r=await api(authMode==='signup'?'/api/signup':'/api/login',{method:'POST',body});$('#aPass').value='';$('#aPass2').value='';await boot(r.user)}
+  catch(x){err.textContent=x.message}
+  finally{btn.disabled=false}
+};
+async function boot(user){
+  USER=user;ME=user.email;
+  folder='inbox';sel=null;query='';$('#q').value='';chatSel='';chatMessages=[];
+  await loadMails();await loadChatPeople();startChatPoll();
+  tabs=[{id:++tabSeq,url:'ymail://start',title:'시작 페이지'}];tabSel=tabSeq;
+  aiLog=[{w:'ai',t:`안녕하세요, ${user.name}님! 무엇을 도와드릴까요?`}];
+  $('#avatarBtn').textContent=user.name.trim().slice(0,1)||'나';
+  $('#umName').textContent=user.name+(user.role==='admin'?' (관리자)':'');$('#umEmail').textContent=user.email;
+  $('#umAdmin').style.display=user.role==='admin'?'':'none';
+  $('#auth').classList.remove('on');$('#mailGrid').classList.remove('reading');
+  renderMail();renderChat();renderBrowser();renderAI();show('mail');
+}
+async function logout(){
+  try{await api('/api/logout',{method:'POST'})}catch(e){}
+  USER=null;ME='';mails=[];people=[];chatMessages=[];chatSel='';clearInterval(chatPoll);$('#umenu').classList.remove('on');
+  setAuthMode('login');$('#auth').classList.add('on');$('#aUser').focus();
+}
+$('#umLogout').onclick=logout;
+$('#avatarBtn').onclick=e=>{e.stopPropagation();$('#umenu').classList.toggle('on')};
+document.addEventListener('click',e=>{if(!e.target.closest('#umenu'))$('#umenu').classList.remove('on')});
+
+/* admin */
+async function openAdmin(){
+  $('#umenu').classList.remove('on');$('#adminModal').classList.add('on');
+  const body=$('#adminBody');body.textContent='불러오는 중…';
+  try{
+    const {users}=await api('/api/admin/users');
+    body.innerHTML=`<table class="utable"><thead><tr><th>이메일</th><th>이름</th><th>가입일</th><th></th></tr></thead><tbody>`+
+     users.map(u=>`<tr><td>${esc(u.email)} ${u.role==='admin'?'<span class="tag">관리자</span>':''}</td><td>${esc(u.name)}</td><td>${esc((u.createdAt||'').slice(0,10))}</td><td>${u.username===USER.username?'':`<button class="btn" data-del="${esc(u.username)}">삭제</button>`}</td></tr>`).join('')+`</tbody></table>`;
+    $$('#adminBody [data-del]').forEach(b=>b.onclick=async()=>{
+      if(!confirm(b.dataset.del+'@ymail.com 계정을 삭제할까요?'))return;
+      try{await api('/api/admin/users/'+encodeURIComponent(b.dataset.del),{method:'DELETE'});toast('삭제했어요');openAdmin()}catch(x){toast(x.message)}
+    });
+  }catch(x){body.textContent=x.message}
+}
+$('#umAdmin').onclick=openAdmin;
+$('#adminClose').onclick=()=>$('#adminModal').classList.remove('on');
+$('#adminModal').onclick=e=>{if(e.target.id==='adminModal')$('#adminModal').classList.remove('on')};
+
+/* ---------- init ---------- */
+(async()=>{
+  try{const r=await api('/api/me');await boot(r.user)}
+  catch(e){
+    $('#auth').classList.add('on');
+    if(e.status!==401)$('#authErr').textContent=e.message;
+  }
+})();
+</script>
+</body>
+</html>
