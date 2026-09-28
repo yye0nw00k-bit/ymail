@@ -8,6 +8,7 @@
  *  - public/ 정적 파일 제공
  */
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -294,34 +295,51 @@ async function api(req, res, pathname, query) {
       userPrompt = 'Ymail의 AI 비서 Yeole AI입니다. 한국어로 친절하고 유용하게 답하세요. 제공된 메일 문맥을 활용하되 모르는 사실은 추측하지 마세요.\n사용자 질문: ' + message + '\n메일 문맥:\n' + context;
     }
 
-    let response;
+    const requestBody = JSON.stringify({
+      model: process.env.OPENROUTER_MODEL || 'openrouter/free',
+      messages: [
+        { role: 'system', content: '당신은 Ymail의 AI 비서 Yeole AI입니다. 정확하고 자연스러운 한국어로 답변하세요.' },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 1200
+    });
+
+    let raw;
     try {
-      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + key,
-          'HTTP-Referer': 'https://ymail-bkvu.onrender.com/',
-          'X-Title': 'Ymail — Yeole Mail'
-        },
-        body: JSON.stringify({
-          model: process.env.OPENROUTER_MODEL || 'openrouter/free',
-          messages: [
-            { role: 'system', content: '당신은 Ymail의 AI 비서 Yeole AI입니다. 정확하고 자연스러운 한국어로 답변하세요.' },
-            { role: 'user', content: userPrompt }
-          ],
-          max_tokens: 1200
-        }),
-        signal: AbortSignal.timeout(30000)
+      raw = await new Promise((resolve, reject) => {
+        const req2 = https.request('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          family: 4,
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(requestBody),
+            'Authorization': 'Bearer ' + key,
+            'HTTP-Referer': 'https://ymail-bkvu.onrender.com/',
+            'X-Title': 'Ymail — Yeole Mail'
+          }
+        }, (res2) => {
+          const chunks = [];
+          res2.on('data', (chunk) => chunks.push(chunk));
+          res2.on('end', () => resolve({
+            status: res2.statusCode || 0,
+            text: Buffer.concat(chunks).toString('utf8')
+          }));
+        });
+        req2.setTimeout(45000, () => req2.destroy(Object.assign(new Error('OpenRouter connection timeout'), { code: 'ETIMEDOUT' })));
+        req2.on('error', reject);
+        req2.write(requestBody);
+        req2.end();
       });
-    } catch {
-      return send(res, 502, { error: 'OpenRouter 서버에 연결하지 못했어요.' });
+    } catch (e) {
+      console.error('OpenRouter connection error:', e && (e.code || e.message || e));
+      return send(res, 502, { error: 'OpenRouter에 연결하지 못했어요.' });
     }
 
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    let data = {};
+    try { data = JSON.parse(raw.text || '{}'); } catch {}
+    if (raw.status < 200 || raw.status >= 300) {
       const msg = (data.error && data.error.message) || 'OpenRouter 요청에 실패했어요.';
-      return send(res, response.status === 429 ? 429 : 502, { error: msg });
+      return send(res, raw.status === 429 ? 429 : 502, { error: msg });
     }
 
     const answer = String(data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim();
