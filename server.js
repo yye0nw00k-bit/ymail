@@ -267,8 +267,8 @@ async function api(req, res, pathname, query) {
 
 
   if (pathname === '/api/ai' && method === 'POST') {
-    if (limited('yeol-ai|' + me.username)) return send(res, 429, { error: 'AI 요청이 너무 많아요. 잠시 후 다시 시도하세요.' });
-    hit('yeol-ai|' + me.username, 20, 60e3);
+    if (limited('yeole-ai|' + me.username)) return send(res, 429, { error: 'AI 요청이 너무 많아요. 잠시 후 다시 시도하세요.' });
+    hit('yeole-ai|' + me.username, 20, 60e3);
 
     const b = await readJson(req);
     const action = String(b.action || 'chat');
@@ -277,56 +277,63 @@ async function api(req, res, pathname, query) {
     const mailBody = String(b.mailBody || '').trim().slice(0, 6000);
     const context = String(b.context || '').slice(0, 8000);
 
-    if (!['chat','draft','summarize'].includes(action)) return send(res,400,{error:'잘못된 AI 작업이에요.'});
-    if (action !== 'summarize' && !message) return send(res,400,{error:'내용을 입력하세요.'});
-    if (action === 'summarize' && !mailBody) return send(res,400,{error:'요약할 메일이 없어요.'});
+    if (!['chat','draft','summarize'].includes(action)) return send(res, 400, { error: '잘못된 AI 작업이에요.' });
+    if (action !== 'summarize' && !message) return send(res, 400, { error: '내용을 입력하세요.' });
+    if (action === 'summarize' && !mailBody) return send(res, 400, { error: '요약할 메일이 없어요.' });
 
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) return send(res,503,{error:'Render 환경변수 GEMINI_API_KEY가 설정되지 않았어요.'});
+    const key = process.env.GROQ_API_KEY;
+    if (!key) return send(res, 503, { error: 'Render 환경변수 GROQ_API_KEY가 설정되지 않았어요.' });
 
-    let prompt;
-    if(action==='summarize'){
-      prompt='Ymail의 한국어 이메일 요약 비서 Yeol AI입니다. 메일의 핵심 내용, 요청사항, 날짜와 중요한 정보를 정확하게 요약하세요. 없는 사실을 만들지 마세요.\n제목: '+subject+'\n메일 내용:\n'+mailBody;
-    }else if(action==='draft'){
-      prompt='Ymail의 이메일 작성 도우미 Yeol AI입니다. 사용자의 요청에 맞춰 자연스럽고 정중한 한국어 이메일 본문만 작성하세요. 제목이나 설명은 쓰지 마세요.\n받는 사람: '+String(b.recipient||'').slice(0,200)+'\n기존 제목: '+subject+'\n사용자 요청: '+message+'\n참고 내용:\n'+mailBody+'\n'+context;
-    }else{
-      prompt='당신은 Ymail의 AI 비서 Yeol AI입니다. 한국어로 친절하고 유용하게 답하세요. 제공된 메일 문맥을 활용하되, 모르는 사실은 추측하지 마세요.\n사용자 질문: '+message+'\n메일 문맥:\n'+context;
+    let userPrompt;
+    if (action === 'summarize') {
+      userPrompt = '메일을 한국어로 정확하게 요약하세요. 핵심 내용, 요청사항, 일정이나 중요한 정보를 정리하고 없는 사실은 만들지 마세요.\n제목: ' + subject + '\n메일 내용:\n' + mailBody;
+    } else if (action === 'draft') {
+      userPrompt = '사용자의 요청에 맞춰 자연스럽고 정중한 한국어 이메일 본문만 작성하세요. 제목이나 설명은 쓰지 마세요.\n받는 사람: ' + String(b.recipient || '').slice(0, 200) + '\n기존 제목: ' + subject + '\n사용자 요청: ' + message + '\n현재 작성 내용:\n' + mailBody + '\n관련 메일 문맥:\n' + context;
+    } else {
+      userPrompt = 'Ymail의 AI 비서 Yeole AI입니다. 사용자의 질문에 친절하고 유용하게 한국어로 답하세요. 제공된 메일 문맥을 활용하되 모르는 내용은 추측하지 마세요.\n사용자 질문: ' + message + '\n메일 문맥:\n' + context;
     }
 
     let response;
-    try{
-      response=await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(process.env.GEMINI_MODEL||'gemini-3.8-flash')+':generateContent',
-        {
-          method:'POST',
-          headers:{'Content-Type':'application/json','x-goog-api-key':key},
-          body:JSON.stringify({
-            contents:[{parts:[{text:prompt}]}],
-            generationConfig:{maxOutputTokens:1200}
-          }),
-          signal:AbortSignal.timeout(30000)
-        }
-      );
-    }catch{
-      return send(res,502,{error:'Gemini 서버에 연결하지 못했어요.'});
+    try {
+      response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + key
+        },
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+          messages: [
+            {
+              role: 'system',
+              content: '당신은 Ymail의 AI 비서 Yeole AI입니다. 정확하고 자연스러운 한국어로 답변하세요.'
+            },
+            { role: 'user', content: userPrompt }
+          ],
+          max_completion_tokens: 1200,
+          temperature: 0.4
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+    } catch {
+      return send(res, 502, { error: 'Groq 서버에 연결하지 못했어요.' });
     }
 
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok){
-      const msg=(data.error&&data.error.message)||'Gemini 요청에 실패했어요.';
-      const status=response.status===429?429:(response.status===400?400:502);
-      return send(res,status,{error:msg});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const status = response.status === 429 ? 429 : (response.status === 401 || response.status === 403 ? 502 : 502);
+      const msg = response.status === 401 || response.status === 403
+        ? 'Groq API 키가 올바르지 않거나 접근 권한이 없어요.'
+        : ((data.error && data.error.message) || 'Groq 요청에 실패했어요.');
+      return send(res, status, { error: msg });
     }
 
-    const answer=(data.candidates||[])
-      .flatMap(c=>c.content&&c.content.parts||[])
-      .filter(p=>p.text)
-      .map(p=>p.text)
-      .join('\n')
-      .trim();
+    const answer = data.choices && data.choices[0] && data.choices[0].message
+      ? String(data.choices[0].message.content || '').trim()
+      : '';
 
-    if(!answer) return send(res,502,{error:'Gemini가 빈 답변을 반환했어요.'});
-    return send(res,200,{answer:answer.slice(0,12000)});
+    if (!answer) return send(res, 502, { error: 'AI가 빈 답변을 반환했어요.' });
+    return send(res, 200, { answer: answer.slice(0, 12000) });
   }
 
   if (pathname === '/api/users' && method === 'GET') {
