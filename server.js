@@ -1,4 +1,5 @@
 'use strict';
+// Yeole AI deployment sync
 /**
  * Ymail server — 외부 패키지 없이 Node 18+ 만으로 동작합니다.
  *  - 회원가입 / 로그인 (scrypt 해시, 서명된 HttpOnly 쿠키)
