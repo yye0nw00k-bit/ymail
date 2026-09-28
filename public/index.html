@@ -406,7 +406,16 @@ function renderReader(){
   $('#rReply').onclick=()=>openCompose({to:m.addr,subj:'Re: '+m.subj.replace(/^Re:\s*/,''),body:'\n\n\n--- '+m.from+' 님의 메시지 ---\n'+m.body.split('\n').map(l=>'> '+l).join('\n')});
   $('#rStar').onclick=async()=>{m.star=!m.star;try{await api('/api/mail/star',{method:'POST',body:{id:m.id,star:m.star}});await loadMails()}catch(e){toast(e.message)}};
   $('#rDel').onclick=async()=>{try{await api('/api/mail/move-trash',{method:'POST',body:{id:m.id}});sel=null;$('#mailGrid').classList.remove('reading');await loadMails();toast('삭제했어요')}catch(e){toast(e.message)}};
-  $('#rSum').onclick=()=>{$('#sumBox').innerHTML=`<div class="summary"><b>요약</b><br>${esc(summarize(m))}</div>`};
+  $('#rSum').onclick=async()=>{
+    const btn=$('#rSum');btn.disabled=true;
+    $('#sumBox').innerHTML='<div class="summary"><b>AI 요약</b><br>Yeole AI가 요약하는 중…</div>';
+    try{
+      const r=await aiCall('summarize',{subject:m.subj,mailBody:m.body});
+      $('#sumBox').innerHTML='<div class="summary"><b>AI 요약</b><br>'+esc(r.answer)+'</div>';
+    }catch(e){
+      $('#sumBox').innerHTML='<div class="summary"><b>요약 오류</b><br>'+esc(e.message)+'</div>';
+    }finally{btn.disabled=false}
+  };
 }
 function summarize(m){
   const s=m.body.replace(/\n+/g,' ').split(/(?<=[.!?요다])\s+/).filter(x=>x.length>8);
@@ -487,18 +496,22 @@ $('#chatForm').onsubmit=async e=>{
 let chatPoll=null;
 function startChatPoll(){clearInterval(chatPoll);chatPoll=setInterval(()=>{if(USER&&$('#v-chat').classList.contains('on')&&chatSel)loadChatMessages()},2500)}
 
-/* ---------- AI (OpenAI-powered Yeol AI) ---------- */
+/* ---------- AI (Groq-powered Yeole AI) ---------- */
 const chips=['안 읽은 메일 요약해줘','안 읽은 메일 몇 개야?','최근 메일에 답장 초안 써줘','회의 일정 조정 메일 써줘'];
-function draftBody(topic,to){return (to&&to.includes('@')?to.split('@')[0]:'담당자')+'님, 안녕하세요.\n\n'+topic+' 관련하여 연락드립니다.\n\n감사합니다.'}
 function mailContext(){
-  return mails.filter(m=>m.folder!=='trash').slice(0,10).map(m=>'보낸사람: '+(m.from||'')+'\n제목: '+(m.subj||'')+'\n내용: '+String(m.body||'').slice(0,1000)).join('\n\n---\n');
+  return mails.filter(m=>m.folder!=='trash').slice(0,10)
+    .map(m=>'보낸사람: '+(m.from||'')+'\n받는사람: '+(m.to||'')+'\n제목: '+(m.subj||'')+'\n내용: '+String(m.body||'').slice(0,1000))
+    .join('\n\n---\n');
 }
 async function aiCall(action,data){
   return api('/api/ai',{method:'POST',body:Object.assign({action:action},data||{})});
 }
 let aiLog=[];
 function renderAI(){
-  $('#aiMsgs').innerHTML=aiLog.map((m,i)=>m.w==='me'?'<div class="bubble me">'+esc(m.t)+'</div>':'<div class="bubble ai">'+esc(m.t)+(m.draft?'<button class="btn primary use" data-i="'+i+'">작성창에서 열기</button>':'')+'</div>').join('');
+  $('#aiMsgs').innerHTML=aiLog.map((m,i)=>m.w==='me'
+    ?'<div class="bubble me">'+esc(m.t)+'</div>'
+    :'<div class="bubble ai">'+esc(m.t)+(m.draft?'<button class="btn primary use" data-i="'+i+'">작성창에서 열기</button>':'')+'</div>'
+  ).join('');
   $$('#aiMsgs .use').forEach(b=>b.onclick=()=>{show('mail');openCompose(aiLog[+b.dataset.i].draft)});
   const el=$('#aiMsgs');el.scrollTop=el.scrollHeight;
 }
@@ -507,7 +520,9 @@ async function askAI(q){
   try{
     const r=await aiCall('chat',{message:q,context:mailContext()});
     aiLog.push({w:'ai',t:r.answer});
-  }catch(e){aiLog.push({w:'ai',t:'오류: '+e.message});}
+  }catch(e){
+    aiLog.push({w:'ai',t:'오류: '+e.message});
+  }
   renderAI();
 }
 $('#chips').innerHTML=chips.map(c=>'<button class="chip">'+esc(c)+'</button>').join('');
@@ -517,10 +532,19 @@ $('#cAi').onclick=async()=>{
   const subj=$('#cSub').value.trim(),to=$('#cTo').value.trim(),btn=$('#cAi');
   btn.disabled=true;
   try{
-    const r=await aiCall('draft',{message:subj||'이메일 초안 작성',recipient:to,subject:subj,mailBody:$('#cBody').value.trim(),context:mailContext()});
-    $('#cBody').value=r.answer;toast('Yeol AI 초안을 만들었어요. 보내기 전에 확인하세요');
-  }catch(e){toast(e.message)}finally{btn.disabled=false}
+    const r=await aiCall('draft',{
+      message:subj||'자연스러운 이메일 초안 작성',
+      recipient:to,
+      subject:subj,
+      mailBody:$('#cBody').value.trim(),
+      context:mailContext()
+    });
+    $('#cBody').value=r.answer;
+    toast('Yeole AI가 실제 AI 초안을 작성했어요. 내용을 확인하고 보내세요');
+  }catch(e){toast(e.message)}
+  finally{btn.disabled=false}
 };
+
 /* ---------- browser ---------- */
 /* ---------- browser ---------- */
 let tabs=[{id:1,url:'ymail://start',title:'시작 페이지'}],tabSel=1,tabSeq=1;
