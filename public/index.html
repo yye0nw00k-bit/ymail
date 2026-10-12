@@ -392,7 +392,7 @@ function show(v){
   $$('.rail button').forEach(b=>{if(b.dataset.view===v)b.setAttribute('aria-current','page')});
   $('#searchBox').style.visibility=v==='mail'?'visible':'hidden';
 }
-$('.rail button').forEach(b=>b.onclick=()=>{show(b.dataset.view);if(b.dataset.view==='dictionary')loadDictionary()});
+$$('.rail button').forEach(b=>b.onclick=()=>{show(b.dataset.view);if(b.dataset.view==='dictionary')loadDictionary()});
 
 /* ---------- mail ---------- */
 function renderFolders(){
@@ -561,7 +561,7 @@ function renderDictionary(){
       ?'관리자 계정으로 등록하면 공식 단어가 됩니다. 오픈사전 항목도 공식 단어로 승격할 수 있어요.'
       :'일반 계정이 등록한 항목은 비공식 오픈사전으로 표시됩니다.';
   }
-  $('.dict-filter').forEach(button=>button.classList.toggle('active',button.dataset.dictType===dictionaryType));
+  $$('.dict-filter').forEach(button=>button.classList.toggle('active',button.dataset.dictType===dictionaryType));
   $('#dictImportRetry').style.display=USER&&USER.role==='admin'?'':'none';
   if(!dictionaryEntries.length){
     box.innerHTML='<div class="dict-empty">검색 결과가 없어요. '+(USER?'첫 번째 단어를 등록해 보세요.':'로그인 후 첫 번째 단어를 등록할 수 있어요.')+'</div>';
@@ -578,11 +578,11 @@ function renderDictionary(){
       (canDelete||(USER&&USER.role==='admin'&&!official)?'<div class="dict-entry-actions">'+(USER&&USER.role==='admin'&&!official?'<button class="btn" data-promote="'+esc(entry.id)+'">공식 단어로 승격</button>':'')+(canDelete?'<button class="btn" data-dict-delete="'+esc(entry.id)+'">삭제</button>':'')+'</div>':'')+
       '</article>';
   }).join('')+(dictionaryHasMore?'<div class="dict-more-wrap"><button class="btn dict-more" type="button" data-dict-more>더 많은 단어 보기</button></div>':'');
-  $('[data-dict-delete]',box).forEach(btn=>btn.onclick=async()=>{
+  $$('[data-dict-delete]',box).forEach(btn=>btn.onclick=async()=>{
     if(!confirm('이 사전 항목을 삭제할까요?'))return;
     try{await api('/api/dictionary/'+encodeURIComponent(btn.dataset.dictDelete),{method:'DELETE'});toast('항목을 삭제했어요');await loadDictionary()}catch(e){toast(e.message)}
   });
-  $('[data-promote]',box).forEach(btn=>btn.onclick=async()=>{
+  $$('[data-promote]',box).forEach(btn=>btn.onclick=async()=>{
     try{await api('/api/admin/dictionary/'+encodeURIComponent(btn.dataset.promote)+'/official',{method:'POST',body:{}});toast('공식 단어로 승격했어요');await loadDictionary()}catch(e){toast(e.message)}
   });
   const more=$('[data-dict-more]',box);
