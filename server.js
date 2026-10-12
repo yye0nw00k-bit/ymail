@@ -4,6 +4,7 @@
  * Ymail server — 외부 패키지 없이 Node 18+ 만으로 동작합니다.
  *  - 회원가입 / 로그인 (scrypt 해시, 서명된 HttpOnly 쿠키)
  *  - 관리자 계정 + 관리자 API
+ *  - yeole 국어사전: 공식 단어 / 비공식 오픈사전
  *  - /api/search : 검색 API 프록시 (Tavily / SearXNG / Brave, 키는 서버에만 보관)
  *  - public/ 정적 파일 제공
  */
@@ -67,6 +68,30 @@ let dictionaryStore = readStore(DICTIONARY_FILE);
 function saveMail() { saveStore(MAIL_FILE, mailStore); }
 function saveChat() { saveStore(CHAT_FILE, chatStore); }
 function saveDictionary() { saveStore(DICTIONARY_FILE, dictionaryStore); }
+
+// 끝말왕 프로젝트 파일에 포함된 기본 단어와 특수 어휘를 최초 실행 때 가져옵니다.
+// 뜻이 없는 단어도 검색되며, 유저가 오픈사전에 뜻을 추가할 수 있습니다.
+try {
+  const seed = JSON.parse(fs.readFileSync(path.join(__dirname, 'seed-words.json'), 'utf8'));
+  const words = Array.isArray(seed.words) ? seed.words : [];
+  let changed = false;
+  for (const rawWord of words) {
+    const word = String(rawWord || '').trim();
+    if (!word) continue;
+    if (dictionaryStore.some(entry => entry.type === 'official' && entry.word === word && entry.source === '끝말왕')) continue;
+    dictionaryStore.push({
+      id: crypto.randomBytes(12).toString('hex'),
+      word, definition: '', pos: '', example: '',
+      type: 'official', author: 'dictionary-import',
+      authorName: '끝말왕 기존 단어장', source: '끝말왕',
+      createdAt: '2026-10-12T00:00:00.000Z'
+    });
+    changed = true;
+  }
+  if (changed) saveDictionary();
+} catch (e) {
+  console.error('끝말왕 기본 단어 목록을 읽지 못했어요:', e.message);
+}
 function mailId() { return crypto.randomBytes(12).toString('hex'); }
 function chatId() { return crypto.randomBytes(12).toString('hex'); }
 function emailOf(username) { return `${username}@${DOMAIN}`; }
@@ -326,85 +351,6 @@ async function api(req, res, pathname, query) {
     entry.reviewedBy = me.username;
     saveDictionary();
     return send(res, 200, { entry });
-  }
-
-  if (pathname === '/api/ai' && method === 'POST') {
-    if (limited('yeole-ai|' + me.username)) return send(res, 429, { error: 'AI 요청이 너무 많아요. 잠시 후 다시 시도하세요.' });
-    hit('yeole-ai|' + me.username, 20, 60e3);
-
-    const b = await readJson(req);
-    const action = String(b.action || 'chat');
-    const message = String(b.message || '').trim().slice(0, 4000);
-    const subject = String(b.subject || '').trim().slice(0, 200);
-    const mailBody = String(b.mailBody || '').trim().slice(0, 6000);
-    const context = String(b.context || '').slice(0, 8000);
-
-    if (!['chat','draft','summarize'].includes(action)) return send(res, 400, { error: '잘못된 AI 작업이에요.' });
-    if (action !== 'summarize' && !message) return send(res, 400, { error: '내용을 입력하세요.' });
-    if (action === 'summarize' && !mailBody) return send(res, 400, { error: '요약할 메일이 없어요.' });
-
-    const key = process.env.OPENROUTER_API_KEY;
-    if (!key) return send(res, 503, { error: 'Render 환경변수 OPENROUTER_API_KEY가 설정되지 않았어요.' });
-
-    let userPrompt;
-    if (action === 'summarize') {
-      userPrompt = 'Ymail의 이메일 요약 비서 Yeole AI입니다. 다음 메일을 한국어로 정확하게 요약하세요. 핵심 내용, 요청사항, 일정 및 중요한 정보를 정리하고 없는 사실은 만들지 마세요.\n제목: ' + subject + '\n메일 내용:\n' + mailBody;
-    } else if (action === 'draft') {
-      userPrompt = 'Ymail의 이메일 작성 도우미 Yeole AI입니다. 사용자의 요청에 맞춰 자연스럽고 정중한 한국어 이메일 본문만 작성하세요. 제목이나 설명은 쓰지 마세요.\n받는 사람: ' + String(b.recipient || '').slice(0, 200) + '\n기존 제목: ' + subject + '\n사용자 요청: ' + message + '\n현재 작성 내용:\n' + mailBody + '\n관련 메일 문맥:\n' + context;
-    } else {
-      userPrompt = 'Ymail의 AI 비서 Yeole AI입니다. 한국어로 친절하고 유용하게 답하세요. 제공된 메일 문맥을 활용하되 모르는 사실은 추측하지 마세요.\n사용자 질문: ' + message + '\n메일 문맥:\n' + context;
-    }
-
-    const requestBody = JSON.stringify({
-      model: process.env.OPENROUTER_MODEL || 'openrouter/free',
-      messages: [
-        { role: 'system', content: '당신은 Ymail의 AI 비서 Yeole AI입니다. 정확하고 자연스러운 한국어로 답변하세요.' },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: 1200
-    });
-
-    let raw;
-    try {
-      raw = await new Promise((resolve, reject) => {
-        const req2 = https.request('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          family: 4,
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(requestBody),
-            'Authorization': 'Bearer ' + key,
-            'HTTP-Referer': 'https://ymail-bkvu.onrender.com/',
-            'X-Title': 'Ymail — Yeole Mail'
-          }
-        }, (res2) => {
-          const chunks = [];
-          res2.on('data', (chunk) => chunks.push(chunk));
-          res2.on('end', () => resolve({
-            status: res2.statusCode || 0,
-            text: Buffer.concat(chunks).toString('utf8')
-          }));
-        });
-        req2.setTimeout(45000, () => req2.destroy(Object.assign(new Error('OpenRouter connection timeout'), { code: 'ETIMEDOUT' })));
-        req2.on('error', reject);
-        req2.write(requestBody);
-        req2.end();
-      });
-    } catch (e) {
-      console.error('OpenRouter connection error:', e && (e.code || e.message || e));
-      return send(res, 502, { error: 'OpenRouter에 연결하지 못했어요.' });
-    }
-
-    let data = {};
-    try { data = JSON.parse(raw.text || '{}'); } catch {}
-    if (raw.status < 200 || raw.status >= 300) {
-      const msg = (data.error && data.error.message) || 'OpenRouter 요청에 실패했어요.';
-      return send(res, raw.status === 429 ? 429 : 502, { error: msg });
-    }
-
-    const answer = String(data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim();
-    if (!answer) return send(res, 502, { error: 'AI가 빈 답변을 반환했어요.' });
-    return send(res, 200, { answer: answer.slice(0, 12000) });
   }
 
   if (pathname === '/api/users' && method === 'GET') {
