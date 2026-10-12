@@ -32,6 +32,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const MAIL_FILE = path.join(DATA_DIR, 'mail.json');
 const CHAT_FILE = path.join(DATA_DIR, 'chat.json');
+const DICTIONARY_FILE = path.join(DATA_DIR, 'dictionary.json');
 const SECRET_FILE = path.join(DATA_DIR, 'secret.key');
 
 let SECRET = process.env.SESSION_SECRET;
@@ -62,8 +63,10 @@ function saveStore(file, value) {
 }
 let mailStore = readStore(MAIL_FILE);
 let chatStore = readStore(CHAT_FILE);
+let dictionaryStore = readStore(DICTIONARY_FILE);
 function saveMail() { saveStore(MAIL_FILE, mailStore); }
 function saveChat() { saveStore(CHAT_FILE, chatStore); }
+function saveDictionary() { saveStore(DICTIONARY_FILE, dictionaryStore); }
 function mailId() { return crypto.randomBytes(12).toString('hex'); }
 function chatId() { return crypto.randomBytes(12).toString('hex'); }
 function emailOf(username) { return `${username}@${DOMAIN}`; }
@@ -267,6 +270,63 @@ async function api(req, res, pathname, query) {
   if (!me) return send(res, 401, { error: '로그인이 필요해요.' });
 
 
+
+
+  /* ---------- yeole 국어사전 ---------- */
+  if (pathname === '/api/dictionary' && method === 'GET') {
+    const q = String(query.get('q') || '').trim().toLocaleLowerCase('ko-KR').slice(0, 100);
+    const items = dictionaryStore
+      .filter(entry => !q || [entry.word, entry.definition, entry.pos, entry.example, entry.authorName]
+        .some(value => String(value || '').toLocaleLowerCase('ko-KR').includes(q)))
+      .sort((a, b) => (a.type === b.type ? String(b.createdAt).localeCompare(String(a.createdAt)) : (a.type === 'official' ? -1 : 1)));
+    return send(res, 200, { entries: items });
+  }
+
+  if (pathname === '/api/dictionary' && method === 'POST') {
+    const b = await readJson(req);
+    const word = String(b.word || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    const definition = String(b.definition || '').trim().slice(0, 1200);
+    const pos = String(b.pos || '').trim().slice(0, 30);
+    const example = String(b.example || '').trim().slice(0, 500);
+    if (!word || !definition) return send(res, 400, { error: '단어와 뜻을 입력하세요.' });
+    if (limited('dictionary|' + me.username)) return send(res, 429, { error: '단어 등록을 너무 자주 하고 있어요. 잠시 후 다시 시도하세요.' });
+    hit('dictionary|' + me.username, 8, 60e3);
+    const entry = {
+      id: crypto.randomBytes(12).toString('hex'),
+      word, definition, pos, example,
+      type: me.role === 'admin' ? 'official' : 'open',
+      author: me.username,
+      authorName: me.name,
+      createdAt: new Date().toISOString()
+    };
+    dictionaryStore.push(entry);
+    saveDictionary();
+    return send(res, 201, { entry });
+  }
+
+  if (pathname.startsWith('/api/dictionary/') && method === 'DELETE') {
+    const id = pathname.slice('/api/dictionary/'.length);
+    if (!/^[a-f0-9]{24}$/.test(id)) return send(res, 400, { error: '잘못된 단어 항목이에요.' });
+    const entry = dictionaryStore.find(x => x.id === id);
+    if (!entry) return send(res, 404, { error: '단어 항목을 찾을 수 없어요.' });
+    if (me.role !== 'admin' && entry.author !== me.username) return send(res, 403, { error: '작성자 또는 관리자만 삭제할 수 있어요.' });
+    dictionaryStore = dictionaryStore.filter(x => x.id !== entry.id);
+    saveDictionary();
+    return send(res, 200, { ok: true });
+  }
+
+  if (pathname.startsWith('/api/admin/dictionary/') && pathname.endsWith('/official') && method === 'POST') {
+    if (me.role !== 'admin') return send(res, 403, { error: '관리자만 공식 단어로 지정할 수 있어요.' });
+    const id = pathname.slice('/api/admin/dictionary/'.length, -'/official'.length);
+    if (!/^[a-f0-9]{24}$/.test(id)) return send(res, 400, { error: '잘못된 단어 항목이에요.' });
+    const entry = dictionaryStore.find(x => x.id === id);
+    if (!entry) return send(res, 404, { error: '단어 항목을 찾을 수 없어요.' });
+    entry.type = 'official';
+    entry.reviewedAt = new Date().toISOString();
+    entry.reviewedBy = me.username;
+    saveDictionary();
+    return send(res, 200, { entry });
+  }
 
   if (pathname === '/api/ai' && method === 'POST') {
     if (limited('yeole-ai|' + me.username)) return send(res, 429, { error: 'AI 요청이 너무 많아요. 잠시 후 다시 시도하세요.' });
