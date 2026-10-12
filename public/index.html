@@ -724,13 +724,17 @@ $('#authForm').onsubmit=async e=>{
 async function boot(user){
   USER=user;ME=user.email;
   folder='inbox';sel=null;query='';$('#q').value='';chatSel='';chatMessages=[];
-  await loadMails();await loadChatPeople();startChatPoll();
   tabs=[{id:++tabSeq,url:'ymail://start',title:'시작 페이지'}];tabSel=tabSeq;
   $('#avatarBtn').textContent=user.name.trim().slice(0,1)||'나';
   $('#umName').textContent=user.name+(user.role==='admin'?' (관리자)':'');$('#umEmail').textContent=user.email;
   $('#umAdmin').style.display=user.role==='admin'?'':'none';
+  // 메일/채팅 초기 로딩이 실패해도 인증 성공 직후 로그인 화면으로 되돌아가지 않게 합니다.
   $('#auth').classList.remove('on');$('#mailGrid').classList.remove('reading');
   renderMail();renderChat();renderBrowser();show('mail');
+  const results = await Promise.allSettled([loadMails(), loadChatPeople()]);
+  startChatPoll();
+  renderMail();renderChat();
+  if(results.some(result => result.status === 'rejected')) toast('로그인은 완료됐지만 일부 정보를 불러오지 못했어요. 새로고침해 보세요.');
 }
 async function logout(){
   try{await api('/api/logout',{method:'POST'})}catch(e){}
