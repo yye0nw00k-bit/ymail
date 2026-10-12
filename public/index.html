@@ -141,6 +141,7 @@ main{min-height:0;min-width:0;position:relative}
 .dictionary-in{max-width:920px;margin:0 auto}
 .dictionary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
 .dictionary-head h1{font-size:clamp(25px,4vw,34px);letter-spacing:-.04em;margin:0}
+.dict-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dictionary-head p{color:var(--mute);margin:5px 0 0}
 .dict-search{display:flex;gap:8px;margin:18px 0 22px}
 .dict-filters{display:flex;gap:7px;flex-wrap:wrap;margin:-7px 0 8px}
@@ -291,7 +292,7 @@ main{min-height:0;min-width:0;position:relative}
     <!-- YE OLE DICTIONARY -->
     <section class="view" id="v-dictionary">
       <div class="dictionary"><div class="dictionary-in">
-        <div class="dictionary-head"><div><h1>yeole 국어사전</h1><p>함께 뜻을 모으는 우리말 사전</p></div><span class="tag">Ymail 계정 연동</span></div>
+        <div class="dictionary-head"><div><h1>yeole 국어사전</h1><p>함께 뜻을 모으는 우리말 사전</p></div><div class="dict-head-actions"><span class="tag">Ymail 계정 연동</span><button class="btn" id="dictImportRetry" type="button" style="display:none">끝말왕 단어장 다시 동기화</button></div></div>
         <form class="dict-search" id="dictSearch"><input id="dictQuery" type="search" placeholder="단어, 뜻, 품사 검색" aria-label="국어사전 검색"><button class="btn primary">검색</button></form>
         <div class="dict-filters" role="group" aria-label="사전 항목 종류">
           <button class="dict-filter active" type="button" data-dict-type="all">전체</button>
@@ -560,7 +561,8 @@ function renderDictionary(){
       ?'관리자 계정으로 등록하면 공식 단어가 됩니다. 오픈사전 항목도 공식 단어로 승격할 수 있어요.'
       :'일반 계정이 등록한 항목은 비공식 오픈사전으로 표시됩니다.';
   }
-  $$('.dict-filter').forEach(button=>button.classList.toggle('active',button.dataset.dictType===dictionaryType));
+  $('.dict-filter').forEach(button=>button.classList.toggle('active',button.dataset.dictType===dictionaryType));
+  $('#dictImportRetry').style.display=USER&&USER.role==='admin'?'':'none';
   if(!dictionaryEntries.length){
     box.innerHTML='<div class="dict-empty">검색 결과가 없어요. '+(USER?'첫 번째 단어를 등록해 보세요.':'로그인 후 첫 번째 단어를 등록할 수 있어요.')+'</div>';
     return;
@@ -595,6 +597,24 @@ $$('.dict-filter').forEach(button=>button.onclick=async()=>{
   dictionaryType=button.dataset.dictType||'all';
   await loadDictionary();
 });
+$('#dictImportRetry').onclick=async()=>{
+  const button=$('#dictImportRetry');
+  button.disabled=true;
+  try{
+    await api('/api/admin/dictionary/import-game-words',{method:'POST',body:{}});
+    toast('끝말왕 단어장 동기화를 시작했어요');
+    $('#dictSourceNote').textContent='끝말왕 단어장을 가져오는 중이에요…';
+    for(let i=0;i<30;i++){
+      await new Promise(resolve=>setTimeout(resolve,1000));
+      const status=await api('/api/dictionary/status');
+      if(status.status!=='가져오는 중'){
+        await loadDictionary();
+        break;
+      }
+    }
+  }catch(e){toast(e.message)}
+  finally{button.disabled=false}
+};
 $('#dictForm').onsubmit=async e=>{
   e.preventDefault();
   if(!USER){toast('단어 등록은 먼저 로그인해 주세요.');return}
