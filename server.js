@@ -141,9 +141,28 @@ async function importGameVocabulary() {
       timer = setTimeout(() => controller.abort(), 25000);
       const response = await fetch(source.url, { signal: controller.signal, headers: { 'User-Agent': 'YeoleDictionary/1.0' } });
       if (!response.ok) throw new Error('HTTP ' + response.status);
-      const text = await response.text();
+
+      // 무료 호스팅 메모리 보호: 외부 목록은 소스마다 최대 1.5MB만 읽습니다.
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      let bytesRead = 0;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const remaining = 1.5 * 1024 * 1024 - bytesRead;
+        if (value.byteLength > remaining) {
+          if (remaining > 0) text += decoder.decode(value.slice(0, remaining), { stream: true });
+          await reader.cancel();
+          break;
+        }
+        bytesRead += value.byteLength;
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
       const addedEntries = [];
       for (const raw of text.split(/\r?\n|[,;\t]/)) {
+        if (addedEntries.length >= 5000) break;
         const word = String(raw || '').replace(/^\s*[|]\s*/, '').replace(/^\s*[0-9]+[.)]\s*/, '').trim().normalize('NFC');
         if (!/^[가-힣]{2,50}$/.test(word) || skipWords.has(word) || knownGameWords.has(word)) continue;
         knownGameWords.add(word);
@@ -413,7 +432,7 @@ async function api(req, res, pathname, query) {
   if (pathname === '/api/admin/dictionary/import-game-words' && method === 'POST') {
     if (me.role !== 'admin') return send(res, 403, { error: '관리자만 단어장을 동기화할 수 있어요.' });
     if (vocabularyImportStatus.state === '가져오는 중') return send(res, 409, { error: '이미 단어장을 가져오고 있어요.' });
-    importGameVocabulary().catch(error => console.error('끝말왕 단어 가져오기 오류:', error.message));
+    console.log('외부 단어 목록은 자동으로 불러오지 않습니다. 관리자 요청 시 제한된 크기로 가져옵니다.');
     return send(res, 202, { ok: true, message: '끝말왕 단어장 동기화를 시작했어요.' });
   }
 
