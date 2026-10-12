@@ -352,7 +352,7 @@ main{min-height:0;min-width:0;position:relative}
     <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--teal)"/><path d="M6 12c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round"/><path d="M6 18c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".7"/><path d="M6 24c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".4"/></svg>
     <span>Ymail <small>Yeole Mail</small></span>
   </div>
-  <div class="seg" role="tablist"><button type="button" role="tab" id="tabLogin" aria-selected="true">로그인</button><button type="button" role="tab" id="tabSignup" aria-selected="false">회원가입</button></div>
+  <div class="seg" role="tablist"><button type="button" role="tab" id="tabLogin" aria-selected="true" onclick="setAuthMode('login')">로그인</button><button type="button" role="tab" id="tabSignup" aria-selected="false" onclick="setAuthMode('signup')">회원가입</button></div>
   <label class="field" id="fName" style="display:none"><span class="l">이름</span><input id="aName" autocomplete="name" maxlength="40"></label>
   <label class="field"><span class="l">아이디</span><div class="idrow"><input id="aUser" autocomplete="username" autocapitalize="none" spellcheck="false"><em>@ymail.com</em></div></label>
   <label class="field"><span class="l">비밀번호</span><input id="aPass" type="password" autocomplete="current-password"></label>
@@ -696,16 +696,20 @@ async function api(path,opts={}){
   if(!r.ok)throw Object.assign(new Error(j.error||'요청에 실패했어요'),{status:r.status});
   return j;
 }
-let authMode='login';
+var authMode='login';
 function setAuthMode(m){
   authMode=m;const su=m==='signup';
-  $('#tabLogin').setAttribute('aria-selected',!su);$('#tabSignup').setAttribute('aria-selected',su);
-  $('#fName').style.display=su?'':'none';$('#fPass2').style.display=su?'':'none';
-  $('#aPass').autocomplete=su?'new-password':'current-password';
-  $('#authSubmit').textContent=su?'계정 만들기':'로그인';$('#authErr').textContent='';
+  const login=document.getElementById('tabLogin'), signup=document.getElementById('tabSignup');
+  const name=document.getElementById('fName'), pass2=document.getElementById('fPass2');
+  const pass=document.getElementById('aPass'), submit=document.getElementById('authSubmit'), err=document.getElementById('authErr');
+  if(login) login.setAttribute('aria-selected',String(!su));
+  if(signup) signup.setAttribute('aria-selected',String(su));
+  if(name) name.style.display=su?'':'none';
+  if(pass2) pass2.style.display=su?'':'none';
+  if(pass) pass.autocomplete=su?'new-password':'current-password';
+  if(submit) submit.textContent=su?'계정 만들기':'로그인';
+  if(err) err.textContent='';
 }
-$('#tabLogin').onclick=()=>setAuthMode('login');
-$('#tabSignup').onclick=()=>setAuthMode('signup');
 $('#authForm').onsubmit=async e=>{
   e.preventDefault();const err=$('#authErr');err.textContent='';
   const username=$('#aUser').value.trim(),password=$('#aPass').value;
