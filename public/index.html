@@ -606,7 +606,7 @@ $('#dictImportRetry').onclick=async()=>{
     await api('/api/admin/dictionary/import-game-words',{method:'POST',body:{}});
     toast('끝말왕 단어장 동기화를 시작했어요');
     $('#dictSourceNote').textContent='끝말왕 단어장을 가져오는 중이에요…';
-    for(let i=0;i<30;i++){
+    for(let i=0;i<90;i++){
       await new Promise(resolve=>setTimeout(resolve,1000));
       const status=await api('/api/dictionary/status');
       if(status.status!=='가져오는 중'){
