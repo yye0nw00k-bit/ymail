@@ -292,12 +292,8 @@ async function api(req, res, pathname, query) {
 
   const me = currentUser(req);
   if (pathname === '/api/me' && method === 'GET') return me ? send(res, 200, { user: publicUser(me) }) : send(res, 401, { error: '로그인이 필요해요.' });
-  if (!me) return send(res, 401, { error: '로그인이 필요해요.' });
 
-
-
-
-  /* ---------- yeole 국어사전 ---------- */
+  /* 사전 검색은 공개하고, 단어 등록·관리는 로그인 후에만 허용합니다. */
   if (pathname === '/api/dictionary' && method === 'GET') {
     const q = String(query.get('q') || '').trim().toLocaleLowerCase('ko-KR').slice(0, 100);
     const items = dictionaryStore
@@ -307,6 +303,9 @@ async function api(req, res, pathname, query) {
     return send(res, 200, { entries: items });
   }
 
+  if (!me) return send(res, 401, { error: '로그인이 필요해요.' });
+
+  /* ---------- yeole 국어사전: 로그인한 유저의 등록·관리 ---------- */
   if (pathname === '/api/dictionary' && method === 'POST') {
     const b = await readJson(req);
     const word = String(b.word || '').trim().replace(/\s+/g, ' ').slice(0, 60);
@@ -492,11 +491,18 @@ const server = http.createServer(async (req, res) => {
 /* ---------- 관리자 계정 생성 ---------- */
 (async () => {
   const an = normUsername(process.env.ADMIN_USERNAME), ap = process.env.ADMIN_PASSWORD;
-  if (an && ap && !findUser(an)) {
-    const { salt, hash } = await hashPassword(ap);
-    users.push({ username: an, name: '관리자', salt, hash, role: 'admin', createdAt: new Date().toISOString() });
-    saveUsers();
-    console.log(`관리자 계정을 만들었어요: ${an}@${DOMAIN}`);
+  if (an && ap) {
+    const existing = findUser(an);
+    if (!existing) {
+      const { salt, hash } = await hashPassword(ap);
+      users.push({ username: an, name: '관리자', salt, hash, role: 'admin', createdAt: new Date().toISOString() });
+      saveUsers();
+      console.log('관리자 계정을 만들었어요: ' + an + '@' + DOMAIN);
+    } else if (existing.role !== 'admin' && await checkPassword(ap, existing)) {
+      existing.role = 'admin';
+      saveUsers();
+      console.log('기존 계정을 관리자 권한으로 설정했어요: ' + an + '@' + DOMAIN);
+    }
   }
   server.listen(PORT, () => {
     console.log(`Ymail 실행 중 → http://localhost:${PORT}`);
