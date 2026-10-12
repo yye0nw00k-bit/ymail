@@ -113,6 +113,8 @@ try {
       if (/^[가-힣]{1,50}$/.test(word)) bulkVocabularyWords.push(word);
     }
   }
+  // 가나다순 정렬: 페이지마다 모든 단어를 객체로 만들지 않고 큰 목록을 합칠 수 있습니다.
+  bulkVocabularyWords.sort();
   console.log('끝말왕 대규모 단어장 로드 완료: ' + bulkVocabularyWords.length.toLocaleString('ko-KR') + '개');
 } catch (e) {
   console.error('끝말왕 대규모 단어장을 읽지 못했어요:', e.message);
@@ -431,6 +433,7 @@ async function api(req, res, pathname, query) {
     return send(res, 200, {
       status: vocabularyImportStatus.state,
       importedWords: vocabularyImportStatus.importedWords,
+      bulkWordCount: bulkVocabularyWords.length,
       sources: vocabularyImportStatus.sources
     });
   }
@@ -441,6 +444,7 @@ async function api(req, res, pathname, query) {
     const page = Math.max(0, Math.min(100000, Number.parseInt(query.get('page') || '0', 10) || 0));
     const limit = Math.max(10, Math.min(100, Number.parseInt(query.get('limit') || '40', 10) || 40));
     const hasWildcard = /[*?]/.test(q);
+
     // *는 0개 이상의 글자, ?는 정확히 한 글자입니다.
     function wildcardMatches(word, pattern) {
       const target = String(word || '').normalize('NFC').toLocaleLowerCase('ko-KR');
@@ -466,6 +470,7 @@ async function api(req, res, pathname, query) {
       while (pi < pattern.length && pattern[pi] === '*') pi++;
       return pi === pattern.length;
     }
+
     const matches = dictionaryStore.filter(entry => {
       if (type !== 'all' && entry.type !== type) return false;
       if (!q) return true;
@@ -476,39 +481,79 @@ async function api(req, res, pathname, query) {
     });
     const rank = entry => (String(entry.definition || '').trim() ? 0 : 10) + (entry.type === 'official' ? 0 : 1);
     matches.sort((a, b) => rank(a) - rank(b) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(a.word).localeCompare(String(b.word), 'ko'));
-    const start = page * limit;
-    const entries = start < matches.length ? matches.slice(start, start + limit) : [];
-    const bulkOffset = Math.max(0, start - matches.length);
-    let bulkTotal = 0;
-    if (type !== 'open' && bulkVocabularyWords.length) {
-      const knownWords = new Set(dictionaryStore
-        .filter(entry => type === 'all' || entry.type === type)
-        .map(entry => String(entry.word || '').normalize('NFC').toLocaleLowerCase('ko-KR')));
-      for (const word of bulkVocabularyWords) {
-        if (knownWords.has(word)) continue;
-        if (q && (hasWildcard ? !wildcardMatches(word, q) : !word.includes(q))) continue;
-        if (bulkTotal >= bulkOffset && entries.length < limit) {
-          entries.push({
-            id: 'bulk-' + word,
-            word,
-            definition: '',
-            pos: '',
-            example: '',
-            type: 'official',
-            author: 'dictionary-import',
-            authorName: '끝말왕 단어장',
-            source: '끝말왕 대규모 단어장',
-            createdAt: ''
-          });
-        }
-        bulkTotal++;
+
+    const definedOfficial = [];
+    const definedOpen = [];
+    const undefinedOfficial = [];
+    const undefinedOpen = [];
+    for (const entry of matches) {
+      const r = rank(entry);
+      if (r === 0) definedOfficial.push(entry);
+      else if (r === 1) definedOpen.push(entry);
+      else if (r === 10) undefinedOfficial.push(entry);
+      else undefinedOpen.push(entry);
+    }
+    // Merge bulk words into the official/no-definition group so they appear from the first search page.
+    undefinedOfficial.sort((a, b) => String(a.word).localeCompare(String(b.word), 'ko'));
+    const knownWords = new Set(dictionaryStore.map(entry =>
+      String(entry.word || '').normalize('NFC').toLocaleLowerCase('ko-KR')
+    ));
+    const bulkMatches = [];
+    if (type !== 'open') {
+      for (const rawWord of bulkVocabularyWords) {
+        const word = String(rawWord || '').normalize('NFC');
+        const key = word.toLocaleLowerCase('ko-KR');
+        if (knownWords.has(key)) continue;
+        if (q && (hasWildcard ? !wildcardMatches(key, q) : !key.includes(q))) continue;
+        bulkMatches.push(word);
       }
     }
-    const total = matches.length + bulkTotal;
-    return send(res, 200, {
-      entries,
-      page, limit, total, hasMore: start + limit < total
-    });
+
+    const start = page * limit;
+    const end = start + limit;
+    const entries = [];
+    let cursor = 0;
+    function appendStoredGroup(items) {
+      const from = Math.max(0, start - cursor);
+      const to = Math.min(items.length, end - cursor);
+      if (to > from) entries.push(...items.slice(from, to));
+      cursor += items.length;
+    }
+    appendStoredGroup(definedOfficial);
+    appendStoredGroup(definedOpen);
+
+    const mergedCount = undefinedOfficial.length + bulkMatches.length;
+    const mergedFrom = Math.max(0, start - cursor);
+    const mergedTo = Math.min(mergedCount, end - cursor);
+    if (mergedTo > mergedFrom) {
+      let storedIndex = 0, bulkIndex = 0, mergedIndex = 0;
+      while (mergedIndex < mergedTo && (storedIndex < undefinedOfficial.length || bulkIndex < bulkMatches.length)) {
+        const takeStored = storedIndex < undefinedOfficial.length &&
+          (bulkIndex >= bulkMatches.length ||
+            String(undefinedOfficial[storedIndex].word).localeCompare(bulkMatches[bulkIndex], 'ko') <= 0);
+        if (takeStored) {
+          const entry = undefinedOfficial[storedIndex++];
+          if (mergedIndex >= mergedFrom) entries.push(entry);
+        } else {
+          const word = bulkMatches[bulkIndex++];
+          if (mergedIndex >= mergedFrom) {
+            entries.push({
+              id: 'bulk-' + word,
+              word, definition: '', pos: '', example: '',
+              type: 'official', author: 'dictionary-import',
+              authorName: '끝말왕 대규모 단어장',
+              source: '끝말왕 대규모 단어장', createdAt: ''
+            });
+          }
+        }
+        mergedIndex++;
+      }
+    }
+    cursor += mergedCount;
+    appendStoredGroup(undefinedOpen);
+
+    const total = definedOfficial.length + definedOpen.length + mergedCount + undefinedOpen.length;
+    return send(res, 200, { entries, page, limit, total, hasMore: start + limit < total });
   }
 
   if (!me) return send(res, 401, { error: '로그인이 필요해요.' });
