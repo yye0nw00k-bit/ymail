@@ -2,7 +2,7 @@
   "name": "ymail",
   "version": "0.3.0",
   "private": true,
-  "description": "Yeole Mail (Ymail) — 메일 / 채팅 / AI / 브라우저",
+  "description": "Yeole Mail (Ymail) — 메일 / 채팅 / 브라우저 / 국어사전",
   "scripts": {
     "start": "node server.js"
   },
