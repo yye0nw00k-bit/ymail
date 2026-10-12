@@ -603,10 +603,22 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-/* ---------- 관리자 계정 생성 ---------- */
+/* ---------- 서버 먼저 실행 + 관리자 초기화 ---------- */
+// Render 등 호스팅 환경에서는 반드시 외부 인터페이스(0.0.0.0)에 바인딩합니다.
+// 관리자 계정 초기화가 실패하더라도 웹 서버 자체는 먼저 실행되게 합니다.
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Ymail 실행 중 → 포트 ${PORT}`);
+  console.log(pickProvider() ? `검색 서비스: ${pickProvider()}` : '참고: 검색 서비스(TAVILY_API_KEY 등)가 설정되지 않아 검색은 아직 동작하지 않아요.');
+  importGameVocabulary().catch(error => console.error('끝말왕 단어 가져오기 오류:', error.message));
+});
+
 (async () => {
-  const an = normUsername(process.env.ADMIN_USERNAME), ap = process.env.ADMIN_PASSWORD;
-  if (an && ap) {
+  try {
+    const an = normUsername(process.env.ADMIN_USERNAME), ap = process.env.ADMIN_PASSWORD;
+    if (!an || !ap) {
+      console.log('관리자 환경변수(ADMIN_USERNAME / ADMIN_PASSWORD)가 설정되지 않았습니다.');
+      return;
+    }
     const existing = findUser(an);
     if (!existing) {
       const { salt, hash } = await hashPassword(ap);
@@ -618,10 +630,7 @@ const server = http.createServer(async (req, res) => {
       saveUsers();
       console.log('기존 계정을 관리자 권한으로 설정했어요: ' + an + '@' + DOMAIN);
     }
+  } catch (error) {
+    console.error('관리자 계정 초기화 오류 (웹 서버는 계속 실행됩니다):', error);
   }
-  server.listen(PORT, () => {
-    console.log(`Ymail 실행 중 → http://localhost:${PORT}`);
-    console.log(pickProvider() ? `검색 서비스: ${pickProvider()}` : '참고: 검색 서비스(TAVILY_API_KEY 등)가 설정되지 않아 검색은 아직 동작하지 않아요.');
-    importGameVocabulary().catch(error => console.error('끝말왕 단어 가져오기 오류:', error.message));
-  });
 })();
