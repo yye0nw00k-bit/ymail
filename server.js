@@ -130,7 +130,10 @@ async function importGameVocabulary() {
   let totalAdded = 0;
   for (const source of GAME_WORD_SOURCES) {
     const previous = vocabularyImportState[source.url];
-    if (previous && previous.importedAt && now - Date.parse(previous.importedAt) < 30 * 864e5) {
+    const sourceStillPresent = dictionaryStore.some(entry =>
+      entry.type === 'official' && entry.source === source.name
+    );
+    if (previous && previous.importedAt && now - Date.parse(previous.importedAt) < 30 * 864e5 && sourceStillPresent) {
       totalAdded += Number(previous.added || 0);
       results.push({ name: source.name, state: '이미 가져옴', added: Number(previous.added || 0) });
       continue;
@@ -413,18 +416,36 @@ async function api(req, res, pathname, query) {
     const page = Math.max(0, Math.min(100000, Number.parseInt(query.get('page') || '0', 10) || 0));
     const limit = Math.max(10, Math.min(100, Number.parseInt(query.get('limit') || '40', 10) || 40));
     const hasWildcard = /[*?]/.test(q);
-    // *는 0개 이상의 글자, ?는 정확히 한 글자입니다. 검색어 전체가 단어와 일치해야 합니다.
-    const wildcardSource = q.split(/([*?])/g).map(part => {
-      if (part === '*') return '.*';
-      if (part === '?') return '.';
-      return part.replace(/[.*+?^\u0024{}()|[\]\\]/g, '\\$&');
-    }).join('');
-    const wildcardPattern = hasWildcard ? new RegExp('^' + wildcardSource + '$', 'u') : null;
+    // *는 0개 이상의 글자, ?는 정확히 한 글자입니다.
+    function wildcardMatches(word, pattern) {
+      const target = String(word || '').normalize('NFC').toLocaleLowerCase('ko-KR');
+      let ti = 0, pi = 0, lastStar = -1, retryAt = 0;
+      while (ti < target.length) {
+        if (pi < pattern.length && (pattern[pi] === '?' || pattern[pi] === target[ti])) {
+          ti++;
+          pi++;
+          continue;
+        }
+        if (pi < pattern.length && pattern[pi] === '*') {
+          lastStar = pi++;
+          retryAt = ti;
+          continue;
+        }
+        if (lastStar !== -1) {
+          pi = lastStar + 1;
+          ti = ++retryAt;
+          continue;
+        }
+        return false;
+      }
+      while (pi < pattern.length && pattern[pi] === '*') pi++;
+      return pi === pattern.length;
+    }
     const matches = dictionaryStore.filter(entry => {
       if (type !== 'all' && entry.type !== type) return false;
       if (!q) return true;
       const word = String(entry.word || '').normalize('NFC').toLocaleLowerCase('ko-KR');
-      if (hasWildcard) return wildcardPattern.test(word);
+      if (hasWildcard) return wildcardMatches(word, q);
       return [entry.word, entry.definition, entry.pos, entry.example, entry.authorName]
         .some(value => String(value || '').normalize('NFC').toLocaleLowerCase('ko-KR').includes(q));
     });
@@ -442,7 +463,11 @@ async function api(req, res, pathname, query) {
   if (pathname === '/api/admin/dictionary/import-game-words' && method === 'POST') {
     if (me.role !== 'admin') return send(res, 403, { error: '관리자만 단어장을 동기화할 수 있어요.' });
     if (vocabularyImportStatus.state === '가져오는 중') return send(res, 409, { error: '이미 단어장을 가져오고 있어요.' });
-    console.log('외부 단어 목록은 자동으로 불러오지 않습니다. 관리자 요청 시 제한된 크기로 가져옵니다.');
+    console.log('관리자 요청으로 끝말왕 단어장 동기화를 시작합니다.');
+    importGameVocabulary().catch(error => {
+      console.error('끝말왕 단어장 동기화 오류:', error);
+      vocabularyImportStatus = { state: '일부 목록 사용 불가', importedWords: 0, sources: [] };
+    });
     return send(res, 202, { ok: true, message: '끝말왕 단어장 동기화를 시작했어요.' });
   }
 
