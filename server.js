@@ -93,6 +93,26 @@ try {
 } catch (e) {
   console.error('끝말왕 기본 단어 목록을 읽지 못했어요:', e.message);
 }
+
+// 대규모 단어장은 개별 사전 항목으로 복제하지 않고 텍스트로 읽어 검색에 사용합니다.
+const BULK_VOCABULARY_DIR = path.join(__dirname, 'vocabulary');
+let bulkVocabularyWords = [];
+try {
+  const files = fs.readdirSync(BULK_VOCABULARY_DIR)
+    .filter(name => /^words-\\d{2}\\.txt$/.test(name))
+    .sort();
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(BULK_VOCABULARY_DIR, file), 'utf8');
+    for (const raw of content.split(/\\r?\\n/)) {
+      const word = raw.trim().normalize('NFC');
+      if (/^[가-힣]{1,50}$/.test(word)) bulkVocabularyWords.push(word);
+    }
+  }
+  console.log('끝말왕 대규모 단어장 로드 완료: ' + bulkVocabularyWords.length.toLocaleString('ko-KR') + '개');
+} catch (e) {
+  console.error('끝말왕 대규모 단어장을 읽지 못했어요:', e.message);
+}
+
 // 끝말왕에서 사용하던 공개 단어 목록을 백그라운드로 가져옵니다.
 // 외부 목록이 잠시 실패해도 내장 단어장과 사전 서비스는 계속 작동합니다.
 const GAME_WORD_SOURCES = [
@@ -452,9 +472,37 @@ async function api(req, res, pathname, query) {
     const rank = entry => (String(entry.definition || '').trim() ? 0 : 10) + (entry.type === 'official' ? 0 : 1);
     matches.sort((a, b) => rank(a) - rank(b) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(a.word).localeCompare(String(b.word), 'ko'));
     const start = page * limit;
+    const entries = start < matches.length ? matches.slice(start, start + limit) : [];
+    const bulkOffset = Math.max(0, start - matches.length);
+    let bulkTotal = 0;
+    if (type !== 'open' && bulkVocabularyWords.length) {
+      const knownWords = new Set(dictionaryStore
+        .filter(entry => type === 'all' || entry.type === type)
+        .map(entry => String(entry.word || '').normalize('NFC').toLocaleLowerCase('ko-KR')));
+      for (const word of bulkVocabularyWords) {
+        if (knownWords.has(word)) continue;
+        if (q && (hasWildcard ? !wildcardMatches(word, q) : !word.includes(q))) continue;
+        if (bulkTotal >= bulkOffset && entries.length < limit) {
+          entries.push({
+            id: 'bulk-' + word,
+            word,
+            definition: '',
+            pos: '',
+            example: '',
+            type: 'official',
+            author: 'dictionary-import',
+            authorName: '끝말왕 단어장',
+            source: '끝말왕 대규모 단어장',
+            createdAt: ''
+          });
+        }
+        bulkTotal++;
+      }
+    }
+    const total = matches.length + bulkTotal;
     return send(res, 200, {
-      entries: matches.slice(start, start + limit),
-      page, limit, total: matches.length, hasMore: start + limit < matches.length
+      entries,
+      page, limit, total, hasMore: start + limit < total
     });
   }
 
