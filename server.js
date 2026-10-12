@@ -413,29 +413,18 @@ async function api(req, res, pathname, query) {
     const page = Math.max(0, Math.min(100000, Number.parseInt(query.get('page') || '0', 10) || 0));
     const limit = Math.max(10, Math.min(100, Number.parseInt(query.get('limit') || '40', 10) || 40));
     const hasWildcard = /[*?]/.test(q);
-    // 와일드카드 검색은 단어 자체에 적용하고, 일반 검색은 뜻·품사 등도 검색합니다.
-    function wildcardMatch(word, pattern) {
-      const target = String(word || '').normalize('NFC').toLocaleLowerCase('ko-KR');
-      let ti = 0, pi = 0, star = -1, retry = 0;
-      while (ti < target.length) {
-        if (pi < pattern.length && (pattern[pi] === '?' || pattern[pi] === target[ti])) {
-          ti++; pi++; continue;
-        }
-        if (pi < pattern.length && pattern[pi] === '*') {
-          star = pi++; retry = ti; continue;
-        }
-        if (star !== -1) {
-          pi = star + 1; ti = ++retry; continue;
-        }
-        return false;
-      }
-      while (pi < pattern.length && pattern[pi] === '*') pi++;
-      return pi === pattern.length;
-    }
+    // *는 0개 이상의 글자, ?는 정확히 한 글자입니다. 검색어 전체가 단어와 일치해야 합니다.
+    const wildcardSource = q.split(/([*?])/g).map(part => {
+      if (part === '*') return '.*';
+      if (part === '?') return '.';
+      return part.replace(/[.*+?^\u0024{}()|[\]\\]/g, '\\$&');
+    }).join('');
+    const wildcardPattern = hasWildcard ? new RegExp('^' + wildcardSource + '$', 'u') : null;
     const matches = dictionaryStore.filter(entry => {
       if (type !== 'all' && entry.type !== type) return false;
       if (!q) return true;
-      if (hasWildcard) return wildcardMatch(entry.word, q);
+      const word = String(entry.word || '').normalize('NFC').toLocaleLowerCase('ko-KR');
+      if (hasWildcard) return wildcardPattern.test(word);
       return [entry.word, entry.definition, entry.pos, entry.example, entry.authorName]
         .some(value => String(value || '').normalize('NFC').toLocaleLowerCase('ko-KR').includes(q));
     });
