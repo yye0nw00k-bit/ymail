@@ -1,7 +1,7 @@
 'use strict';
-// Yeole Mail + yeole 국어사전
+// Yeole — 메일, 채팅, 브라우저, 국어사전
 /**
- * Ymail server — 외부 패키지 없이 Node 18+ 만으로 동작합니다.
+ * Yeole server — 외부 패키지 없이 Node 18+ 만으로 동작합니다.
  *  - 회원가입 / 로그인 (scrypt 해시, 서명된 HttpOnly 쿠키)
  *  - 관리자 계정 + 관리자 API
  *  - yeole 국어사전: 공식 단어 / 비공식 오픈사전
@@ -75,11 +75,16 @@ function saveDictionary() { saveStore(DICTIONARY_FILE, dictionaryStore); }
 try {
   const seed = JSON.parse(fs.readFileSync(path.join(__dirname, 'seed-words.json'), 'utf8'));
   const words = Array.isArray(seed.words) ? seed.words : [];
+  const knownSeedWords = new Set(
+    dictionaryStore
+      .filter(entry => entry.type === 'official' && entry.source === '끝말왕')
+      .map(entry => String(entry.word || '').normalize('NFC'))
+  );
   let changed = false;
   for (const rawWord of words) {
-    const word = String(rawWord || '').trim();
-    if (!word) continue;
-    if (dictionaryStore.some(entry => entry.type === 'official' && entry.word === word && entry.source === '끝말왕')) continue;
+    const word = String(rawWord || '').trim().normalize('NFC');
+    if (!word || knownSeedWords.has(word)) continue;
+    knownSeedWords.add(word);
     dictionaryStore.push({
       id: crypto.randomBytes(12).toString('hex'),
       word, definition: '', pos: '', example: '',
@@ -594,7 +599,7 @@ async function api(req, res, pathname, query) {
     if (!/^\S+@\S+\.\S+$/.test(to)) return send(res, 400, { error: '받는 사람 이메일 주소가 올바르지 않아요.' });
     if (!bodyText) return send(res, 400, { error: '메일 내용을 입력하세요.' });
     const recipient = findUserByEmail(to);
-    if (!recipient) return send(res, 404, { error: 'Ymail에 가입한 사용자의 이메일만 보낼 수 있어요.' });
+    if (!recipient) return send(res, 404, { error: 'Yeole에 가입한 사용자의 이메일만 보낼 수 있어요.' });
     const now = new Date().toISOString();
     const pair = mailId();
     const fromAddr = emailOf(me.username);
@@ -712,7 +717,7 @@ server.headersTimeout = 120000;
 // Render 등 호스팅 환경에서는 반드시 외부 인터페이스(0.0.0.0)에 바인딩합니다.
 // 관리자 계정 초기화가 실패하더라도 웹 서버 자체는 먼저 실행되게 합니다.
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Ymail 실행 중 → 포트 ${PORT}`);
+  console.log(`Yeole 실행 중 → 포트 ${PORT}`);
   console.log(pickProvider() ? `검색 서비스: ${pickProvider()}` : '참고: 검색 서비스(TAVILY_API_KEY 등)가 설정되지 않아 검색은 아직 동작하지 않아요.');
   // 외부 단어장 가져오기는 메모리 사용량을 줄이기 위해 시작할 때 자동 실행하지 않습니다. 관리자 메뉴에서 필요할 때 실행할 수 있습니다.
 });
