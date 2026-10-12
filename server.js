@@ -587,6 +587,9 @@ function serveStatic(req, res, pathname) {
 }
 
 const server = http.createServer(async (req, res) => {
+// Render 프록시의 keep-alive 연결 재사용으로 인한 간헐적 502를 줄입니다.
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 120000;
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
