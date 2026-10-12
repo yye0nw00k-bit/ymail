@@ -544,10 +544,12 @@ async function refreshDictionaryStatus(){
   const note=$('#dictSourceNote');
   try{
     const s=await api('/api/dictionary/status');
-    if(s.status==='가져오는 중')note.textContent='끝말왕 확장 단어장을 가져오는 중이에요. 기본 단어는 먼저 검색할 수 있어요.';
-    else if(s.status==='완료')note.textContent='끝말왕 단어장 연결 완료 · 현재 검색 결과 '+dictionaryTotal.toLocaleString('ko-KR')+'개';
-    else if(s.status==='일부 목록 사용 불가')note.textContent='일부 외부 단어장은 연결되지 않았어요. 내장 단어와 이미 가져온 단어는 정상 이용할 수 있어요.';
-    else note.textContent='현재 검색 결과 '+dictionaryTotal.toLocaleString('ko-KR')+'개';
+    const bulkCount=Number(s.bulkWordCount||0);
+    const bulkText=bulkCount?'대규모 단어장 '+bulkCount.toLocaleString('ko-KR')+'개 로드 · ':'';
+    if(s.status==='가져오는 중')note.textContent=bulkText+'추가 단어장을 가져오는 중이에요.';
+    else if(s.status==='완료')note.textContent=bulkText+'추가 단어장 동기화 완료 · 현재 검색 결과 '+dictionaryTotal.toLocaleString('ko-KR')+'개';
+    else if(s.status==='일부 목록 사용 불가')note.textContent=bulkText+'일부 추가 단어장은 가져오지 못했어요. 기존 단어는 검색할 수 있어요.';
+    else note.textContent=bulkText+'현재 검색 결과 '+dictionaryTotal.toLocaleString('ko-KR')+'개';
   }catch(e){note.textContent='현재 검색 결과 '+dictionaryTotal.toLocaleString('ko-KR')+'개'}
 }
 function renderDictionary(){
