@@ -156,7 +156,7 @@ async function importGameVocabulary() {
         });
       }
       if (addedEntries.length) {
-        dictionaryStore.push(...addedEntries);
+        dictionaryStore = dictionaryStore.concat(addedEntries);
         saveDictionary();
       }
       totalAdded += addedEntries.length;
