@@ -247,7 +247,7 @@ function parseCookies(req) {
   }
   return out;
 }
-const isHttps = (req) => req.socket.encrypted || (TRUST_PROXY && req.headers['x-forwarded-proto'] === 'https');
+const isHttps = (req) => !!req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https';
 function setSession(req, res, username) {
   const secure = isHttps(req) ? '; Secure' : '';
   res.setHeader('Set-Cookie', `ymail_session=${makeToken(username)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${7 * 86400}${secure}`);
@@ -631,7 +631,7 @@ server.headersTimeout = 120000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Ymail 실행 중 → 포트 ${PORT}`);
   console.log(pickProvider() ? `검색 서비스: ${pickProvider()}` : '참고: 검색 서비스(TAVILY_API_KEY 등)가 설정되지 않아 검색은 아직 동작하지 않아요.');
-  importGameVocabulary().catch(error => console.error('끝말왕 단어 가져오기 오류:', error.message));
+  // 외부 단어장 가져오기는 메모리 사용량을 줄이기 위해 시작할 때 자동 실행하지 않습니다. 관리자 메뉴에서 필요할 때 실행할 수 있습니다.
 });
 
 (async () => {
