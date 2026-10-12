@@ -32,6 +32,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const MAIL_FILE = path.join(DATA_DIR, 'mail.json');
 const CHAT_FILE = path.join(DATA_DIR, 'chat.json');
+const DICTIONARY_FILE = path.join(DATA_DIR, 'dictionary.json');
 const SECRET_FILE = path.join(DATA_DIR, 'secret.key');
 
 let SECRET = process.env.SESSION_SECRET;
@@ -62,8 +63,10 @@ function saveStore(file, value) {
 }
 let mailStore = readStore(MAIL_FILE);
 let chatStore = readStore(CHAT_FILE);
+let dictionaryStore = readStore(DICTIONARY_FILE);
 function saveMail() { saveStore(MAIL_FILE, mailStore); }
 function saveChat() { saveStore(CHAT_FILE, chatStore); }
+function saveDictionary() { saveStore(DICTIONARY_FILE, dictionaryStore); }
 function mailId() { return crypto.randomBytes(12).toString('hex'); }
 function chatId() { return crypto.randomBytes(12).toString('hex'); }
 function emailOf(username) { return `${username}@${DOMAIN}`; }
@@ -267,6 +270,521 @@ async function api(req, res, pathname, query) {
   if (!me) return send(res, 401, { error: '로그인이 필요해요.' });
 
 
+
+
+  /* ---------- yeole 국어사전 ---------- */
+  if (pathname === '/api/dictionary' && method === 'GET') {
+    const q = String(query.get('q') || '').trim().toLocaleLowerCase('ko-KR').slice(0, 100);
+    const items = dictionaryStore
+      .filter(entry => !q || [entry.word, entry.definition, entry.pos, entry.example, entry.authorName]
+        .some(value => String(value || '').toLocaleLowerCase('ko-KR').includes(q)))
+      .sort((a, b) => (a.type === b.type ? String(b.createdAt).localeCompare(String(a.createdAt)) : (a.type === 'official' ? -1 : 1)));
+    return send(res, 200, { entries: items });
+  }
+
+  if (pathname === '/api/dictionary' && method === 'POST') {
+    const b = await readJson(req);
+    const word = String(b.word || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    const definition = String(b.definition || '').trim().slice(0, 1200);
+    const pos = String(b.pos || '').trim().slice(0, 30);
+    const example = String(b.example || '').trim().slice(0, 500);
+    if (!word || !definition) return send(res, 400, { error: '단어와 뜻을 입력하세요.' });
+    if (limited('dictionary|' + me.username)) return send(res, 429, { error: '단어 등록을 너무 자주 하고 있어요. 잠시 후 다시 시도하세요.' });
+    hit('dictionary|' + me.username, 8, 60e3);
+    const entry = {
+      id: crypto.randomBytes(12).toString('hex'),
+      word, definition, pos, example,
+      type: me.role === 'admin' ? 'official' : 'open',
+      author: me.username,
+      authorName: me.name,
+      createdAt: new Date().toISOString()
+    };
+    dictionaryStore.push(entry);
+    saveDictionary();
+    return send(res, 201, { entry });
+  }
+
+  if (pathname.startsWith('/api/dictionary/') && method === 'DELETE') {
+    const id = pathname.slice('/api/dictionary/'.length);
+    if (!new RegExp('^[a-f0-9]{24}
+    if (limited('yeole-ai|' + me.username)) return send(res, 429, { error: 'AI 요청이 너무 많아요. 잠시 후 다시 시도하세요.' });
+    hit('yeole-ai|' + me.username, 20, 60e3);
+
+    const b = await readJson(req);
+    const action = String(b.action || 'chat');
+    const message = String(b.message || '').trim().slice(0, 4000);
+    const subject = String(b.subject || '').trim().slice(0, 200);
+    const mailBody = String(b.mailBody || '').trim().slice(0, 6000);
+    const context = String(b.context || '').slice(0, 8000);
+
+    if (!['chat','draft','summarize'].includes(action)) return send(res, 400, { error: '잘못된 AI 작업이에요.' });
+    if (action !== 'summarize' && !message) return send(res, 400, { error: '내용을 입력하세요.' });
+    if (action === 'summarize' && !mailBody) return send(res, 400, { error: '요약할 메일이 없어요.' });
+
+    const key = process.env.OPENROUTER_API_KEY;
+    if (!key) return send(res, 503, { error: 'Render 환경변수 OPENROUTER_API_KEY가 설정되지 않았어요.' });
+
+    let userPrompt;
+    if (action === 'summarize') {
+      userPrompt = 'Ymail의 이메일 요약 비서 Yeole AI입니다. 다음 메일을 한국어로 정확하게 요약하세요. 핵심 내용, 요청사항, 일정 및 중요한 정보를 정리하고 없는 사실은 만들지 마세요.\n제목: ' + subject + '\n메일 내용:\n' + mailBody;
+    } else if (action === 'draft') {
+      userPrompt = 'Ymail의 이메일 작성 도우미 Yeole AI입니다. 사용자의 요청에 맞춰 자연스럽고 정중한 한국어 이메일 본문만 작성하세요. 제목이나 설명은 쓰지 마세요.\n받는 사람: ' + String(b.recipient || '').slice(0, 200) + '\n기존 제목: ' + subject + '\n사용자 요청: ' + message + '\n현재 작성 내용:\n' + mailBody + '\n관련 메일 문맥:\n' + context;
+    } else {
+      userPrompt = 'Ymail의 AI 비서 Yeole AI입니다. 한국어로 친절하고 유용하게 답하세요. 제공된 메일 문맥을 활용하되 모르는 사실은 추측하지 마세요.\n사용자 질문: ' + message + '\n메일 문맥:\n' + context;
+    }
+
+    const requestBody = JSON.stringify({
+      model: process.env.OPENROUTER_MODEL || 'openrouter/free',
+      messages: [
+        { role: 'system', content: '당신은 Ymail의 AI 비서 Yeole AI입니다. 정확하고 자연스러운 한국어로 답변하세요.' },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 1200
+    });
+
+    let raw;
+    try {
+      raw = await new Promise((resolve, reject) => {
+        const req2 = https.request('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          family: 4,
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(requestBody),
+            'Authorization': 'Bearer ' + key,
+            'HTTP-Referer': 'https://ymail-bkvu.onrender.com/',
+            'X-Title': 'Ymail — Yeole Mail'
+          }
+        }, (res2) => {
+          const chunks = [];
+          res2.on('data', (chunk) => chunks.push(chunk));
+          res2.on('end', () => resolve({
+            status: res2.statusCode || 0,
+            text: Buffer.concat(chunks).toString('utf8')
+          }));
+        });
+        req2.setTimeout(45000, () => req2.destroy(Object.assign(new Error('OpenRouter connection timeout'), { code: 'ETIMEDOUT' })));
+        req2.on('error', reject);
+        req2.write(requestBody);
+        req2.end();
+      });
+    } catch (e) {
+      console.error('OpenRouter connection error:', e && (e.code || e.message || e));
+      return send(res, 502, { error: 'OpenRouter에 연결하지 못했어요.' });
+    }
+
+    let data = {};
+    try { data = JSON.parse(raw.text || '{}'); } catch {}
+    if (raw.status < 200 || raw.status >= 300) {
+      const msg = (data.error && data.error.message) || 'OpenRouter 요청에 실패했어요.';
+      return send(res, raw.status === 429 ? 429 : 502, { error: msg });
+    }
+
+    const answer = String(data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim();
+    if (!answer) return send(res, 502, { error: 'AI가 빈 답변을 반환했어요.' });
+    return send(res, 200, { answer: answer.slice(0, 12000) });
+  }
+
+  if (pathname === '/api/users' && method === 'GET') {
+    const q = String(query.get('q') || '').trim().toLowerCase().slice(0, 50);
+    const result = users
+      .filter(u => u.username !== me.username)
+      .filter(u => !q || u.username.includes(q) || u.name.toLowerCase().includes(q) || emailOf(u.username).toLowerCase().includes(q))
+      .map(publicUser);
+    return send(res, 200, { users: result });
+  }
+
+  if (pathname === '/api/mail' && method === 'GET') {
+    const items = mailStore
+      .filter(m => m.owner === me.username)
+      .sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .map(m => mailForUser(m, me.username));
+    return send(res, 200, { mails: items });
+  }
+
+  if (pathname === '/api/mail/send' && method === 'POST') {
+    const b = await readJson(req);
+    const to = String(b.to || '').trim().toLowerCase();
+    const subj = String(b.subj || '').trim().slice(0, 200);
+    const bodyText = String(b.body || '').trim().slice(0, 10000);
+    if (!/^\S+@\S+\.\S+$/.test(to)) return send(res, 400, { error: '받는 사람 이메일 주소가 올바르지 않아요.' });
+    if (!bodyText) return send(res, 400, { error: '메일 내용을 입력하세요.' });
+    const recipient = findUserByEmail(to);
+    if (!recipient) return send(res, 404, { error: 'Ymail에 가입한 사용자의 이메일만 보낼 수 있어요.' });
+    const now = new Date().toISOString();
+    const pair = mailId();
+    const fromAddr = emailOf(me.username);
+    mailStore.push({ id: pair+'-s', owner: me.username, folder: 'sent', from: '나', addr: fromAddr, to: emailOf(recipient.username), toName: recipient.name, subj, body: bodyText, time: '방금', read: true, star: false, createdAt: now, pair });
+    mailStore.push({ id: pair+'-r', owner: recipient.username, folder: 'inbox', from: me.name, addr: fromAddr, to: emailOf(recipient.username), subj, body: bodyText, time: '방금', read: false, star: false, createdAt: now, pair });
+    saveMail();
+    return send(res, 201, { ok: true });
+  }
+
+  if (pathname === '/api/mail/read' && method === 'POST') {
+    const b = await readJson(req); const m = mailStore.find(x => x.id === b.id && x.owner === me.username);
+    if (!m) return send(res, 404, { error: '메일을 찾을 수 없어요.' });
+    m.read = true; saveMail(); return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/mail/star' && method === 'POST') {
+    const b = await readJson(req); const m = mailStore.find(x => x.id === b.id && x.owner === me.username);
+    if (!m) return send(res, 404, { error: '메일을 찾을 수 없어요.' });
+    m.star = !!b.star; saveMail(); return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/mail/move-trash' && method === 'POST') {
+    const b = await readJson(req); const m = mailStore.find(x => x.id === b.id && x.owner === me.username);
+    if (!m) return send(res, 404, { error: '메일을 찾을 수 없어요.' });
+    if (m.folder === 'trash') mailStore = mailStore.filter(x => x !== m); else m.folder = 'trash';
+    saveMail(); return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/chat/people' && method === 'GET') {
+    const q = String(query.get('q') || '').trim().toLowerCase().slice(0,50);
+    const result = users.filter(u => u.username !== me.username)
+      .filter(u => !q || u.username.includes(q) || u.name.toLowerCase().includes(q))
+      .map(publicUser);
+    return send(res, 200, { users: result });
+  }
+
+  if (pathname === '/api/chat' && method === 'GET') {
+    const withUser = normUsername(query.get('with'));
+    const other = findUser(withUser);
+    if (!other || other.username === me.username) return send(res, 400, { error: '대화 상대를 찾을 수 없어요.' });
+    const items = chatStore.filter(m => (m.from === me.username && m.to === other.username) || (m.from === other.username && m.to === me.username));
+    return send(res, 200, { messages: items });
+  }
+
+  if (pathname === '/api/chat' && method === 'POST') {
+    const b = await readJson(req); const to = normUsername(b.to); const bodyText = String(b.body || '').trim().slice(0,4000);
+    const other = findUser(to);
+    if (!other || other.username === me.username) return send(res, 404, { error: '대화 상대를 찾을 수 없어요.' });
+    if (!bodyText) return send(res, 400, { error: '메시지를 입력하세요.' });
+    const msg = { id: chatId(), from: me.username, fromName: me.name, to: other.username, toName: other.name, body: bodyText, createdAt: new Date().toISOString() };
+    chatStore.push(msg); saveChat();
+    return send(res, 201, { message: msg });
+  }
+
+  if (pathname === '/api/search' && method === 'GET') {
+    const q = String(query.get('q') || '').trim().slice(0, 200);
+    if (!q) return send(res, 400, { error: '검색어를 입력하세요.' });
+    if (limited('search|' + me.username)) return send(res, 429, { error: '검색을 너무 자주 하고 있어요. 잠시 후 다시 시도하세요.' });
+    hit('search|' + me.username, 30, 60e3);
+    return send(res, 200, await webSearch(q));
+  }
+
+  if (pathname.startsWith('/api/admin/')) {
+    if (me.role !== 'admin') return send(res, 403, { error: '관리자만 사용할 수 있어요.' });
+    if (pathname === '/api/admin/users' && method === 'GET') return send(res, 200, { users: users.map(publicUser) });
+    const m = pathname.match(/^\/api\/admin\/users\/([a-z0-9._]+)$/);
+    if (m && method === 'DELETE') {
+      const t = findUser(m[1]);
+      if (!t) return send(res, 404, { error: '없는 사용자예요.' });
+      if (t.username === me.username) return send(res, 400, { error: '자기 자신은 삭제할 수 없어요.' });
+      users = users.filter((u) => u !== t); saveUsers();
+      mailStore = mailStore.filter(m => m.owner !== t.username && m.fromUser !== t.username && m.toUser !== t.username); saveMail();
+      chatStore = chatStore.filter(m => m.from !== t.username && m.to !== t.username); saveChat();
+      return send(res, 200, { ok: true });
+    }
+  }
+  return send(res, 404, { error: '없는 API예요.' });
+}
+
+/* ---------- 정적 파일 ---------- */
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
+function serveStatic(req, res, pathname) {
+  let rel; try { rel = decodeURIComponent(pathname); } catch { res.writeHead(400); return res.end(); }
+  if (rel === '/') rel = '/index.html';
+  const file = path.normalize(path.join(PUBLIC, rel));
+  if (file !== PUBLIC && !file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); return res.end('Forbidden'); }
+  fs.readFile(file, (err, buf) => {
+    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Not found'); }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.end(buf);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/api/')) return await api(req, res, url.pathname, url.searchParams);
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
+    return serveStatic(req, res, url.pathname);
+  } catch (e) {
+    if (e && e.status) return send(res, e.status, { error: e.message });
+    console.error(e);
+    return send(res, 500, { error: '서버 오류가 발생했어요.' });
+  }
+});
+
+/* ---------- 관리자 계정 생성 ---------- */
+(async () => {
+  const an = normUsername(process.env.ADMIN_USERNAME), ap = process.env.ADMIN_PASSWORD;
+  if (an && ap && !findUser(an)) {
+    const { salt, hash } = await hashPassword(ap);
+    users.push({ username: an, name: '관리자', salt, hash, role: 'admin', createdAt: new Date().toISOString() });
+    saveUsers();
+    console.log(`관리자 계정을 만들었어요: ${an}@${DOMAIN}`);
+  }
+  server.listen(PORT, () => {
+    console.log(`Ymail 실행 중 → http://localhost:${PORT}`);
+    console.log(pickProvider() ? `검색 서비스: ${pickProvider()}` : '참고: 검색 서비스(TAVILY_API_KEY 등)가 설정되지 않아 검색은 아직 동작하지 않아요.');
+  });
+})();
+).test(id)) return send(res, 400, { error: '잘못된 단어 항목이에요.' });
+    const entry = dictionaryStore.find(x => x.id === id);
+    if (!entry) return send(res, 404, { error: '단어 항목을 찾을 수 없어요.' });
+    if (me.role !== 'admin' && entry.author !== me.username) return send(res, 403, { error: '작성자 또는 관리자만 삭제할 수 있어요.' });
+    dictionaryStore = dictionaryStore.filter(x => x.id !== entry.id);
+    saveDictionary();
+    return send(res, 200, { ok: true });
+  }
+
+  if (pathname.startsWith('/api/admin/dictionary/') && pathname.endsWith('/official') && method === 'POST') {
+    if (me.role !== 'admin') return send(res, 403, { error: '관리자만 공식 단어로 지정할 수 있어요.' });
+    const id = pathname.slice('/api/admin/dictionary/'.length, -'/official'.length);
+    if (!new RegExp('^[a-f0-9]{24}
+    if (limited('yeole-ai|' + me.username)) return send(res, 429, { error: 'AI 요청이 너무 많아요. 잠시 후 다시 시도하세요.' });
+    hit('yeole-ai|' + me.username, 20, 60e3);
+
+    const b = await readJson(req);
+    const action = String(b.action || 'chat');
+    const message = String(b.message || '').trim().slice(0, 4000);
+    const subject = String(b.subject || '').trim().slice(0, 200);
+    const mailBody = String(b.mailBody || '').trim().slice(0, 6000);
+    const context = String(b.context || '').slice(0, 8000);
+
+    if (!['chat','draft','summarize'].includes(action)) return send(res, 400, { error: '잘못된 AI 작업이에요.' });
+    if (action !== 'summarize' && !message) return send(res, 400, { error: '내용을 입력하세요.' });
+    if (action === 'summarize' && !mailBody) return send(res, 400, { error: '요약할 메일이 없어요.' });
+
+    const key = process.env.OPENROUTER_API_KEY;
+    if (!key) return send(res, 503, { error: 'Render 환경변수 OPENROUTER_API_KEY가 설정되지 않았어요.' });
+
+    let userPrompt;
+    if (action === 'summarize') {
+      userPrompt = 'Ymail의 이메일 요약 비서 Yeole AI입니다. 다음 메일을 한국어로 정확하게 요약하세요. 핵심 내용, 요청사항, 일정 및 중요한 정보를 정리하고 없는 사실은 만들지 마세요.\n제목: ' + subject + '\n메일 내용:\n' + mailBody;
+    } else if (action === 'draft') {
+      userPrompt = 'Ymail의 이메일 작성 도우미 Yeole AI입니다. 사용자의 요청에 맞춰 자연스럽고 정중한 한국어 이메일 본문만 작성하세요. 제목이나 설명은 쓰지 마세요.\n받는 사람: ' + String(b.recipient || '').slice(0, 200) + '\n기존 제목: ' + subject + '\n사용자 요청: ' + message + '\n현재 작성 내용:\n' + mailBody + '\n관련 메일 문맥:\n' + context;
+    } else {
+      userPrompt = 'Ymail의 AI 비서 Yeole AI입니다. 한국어로 친절하고 유용하게 답하세요. 제공된 메일 문맥을 활용하되 모르는 사실은 추측하지 마세요.\n사용자 질문: ' + message + '\n메일 문맥:\n' + context;
+    }
+
+    const requestBody = JSON.stringify({
+      model: process.env.OPENROUTER_MODEL || 'openrouter/free',
+      messages: [
+        { role: 'system', content: '당신은 Ymail의 AI 비서 Yeole AI입니다. 정확하고 자연스러운 한국어로 답변하세요.' },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 1200
+    });
+
+    let raw;
+    try {
+      raw = await new Promise((resolve, reject) => {
+        const req2 = https.request('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          family: 4,
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(requestBody),
+            'Authorization': 'Bearer ' + key,
+            'HTTP-Referer': 'https://ymail-bkvu.onrender.com/',
+            'X-Title': 'Ymail — Yeole Mail'
+          }
+        }, (res2) => {
+          const chunks = [];
+          res2.on('data', (chunk) => chunks.push(chunk));
+          res2.on('end', () => resolve({
+            status: res2.statusCode || 0,
+            text: Buffer.concat(chunks).toString('utf8')
+          }));
+        });
+        req2.setTimeout(45000, () => req2.destroy(Object.assign(new Error('OpenRouter connection timeout'), { code: 'ETIMEDOUT' })));
+        req2.on('error', reject);
+        req2.write(requestBody);
+        req2.end();
+      });
+    } catch (e) {
+      console.error('OpenRouter connection error:', e && (e.code || e.message || e));
+      return send(res, 502, { error: 'OpenRouter에 연결하지 못했어요.' });
+    }
+
+    let data = {};
+    try { data = JSON.parse(raw.text || '{}'); } catch {}
+    if (raw.status < 200 || raw.status >= 300) {
+      const msg = (data.error && data.error.message) || 'OpenRouter 요청에 실패했어요.';
+      return send(res, raw.status === 429 ? 429 : 502, { error: msg });
+    }
+
+    const answer = String(data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim();
+    if (!answer) return send(res, 502, { error: 'AI가 빈 답변을 반환했어요.' });
+    return send(res, 200, { answer: answer.slice(0, 12000) });
+  }
+
+  if (pathname === '/api/users' && method === 'GET') {
+    const q = String(query.get('q') || '').trim().toLowerCase().slice(0, 50);
+    const result = users
+      .filter(u => u.username !== me.username)
+      .filter(u => !q || u.username.includes(q) || u.name.toLowerCase().includes(q) || emailOf(u.username).toLowerCase().includes(q))
+      .map(publicUser);
+    return send(res, 200, { users: result });
+  }
+
+  if (pathname === '/api/mail' && method === 'GET') {
+    const items = mailStore
+      .filter(m => m.owner === me.username)
+      .sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .map(m => mailForUser(m, me.username));
+    return send(res, 200, { mails: items });
+  }
+
+  if (pathname === '/api/mail/send' && method === 'POST') {
+    const b = await readJson(req);
+    const to = String(b.to || '').trim().toLowerCase();
+    const subj = String(b.subj || '').trim().slice(0, 200);
+    const bodyText = String(b.body || '').trim().slice(0, 10000);
+    if (!/^\S+@\S+\.\S+$/.test(to)) return send(res, 400, { error: '받는 사람 이메일 주소가 올바르지 않아요.' });
+    if (!bodyText) return send(res, 400, { error: '메일 내용을 입력하세요.' });
+    const recipient = findUserByEmail(to);
+    if (!recipient) return send(res, 404, { error: 'Ymail에 가입한 사용자의 이메일만 보낼 수 있어요.' });
+    const now = new Date().toISOString();
+    const pair = mailId();
+    const fromAddr = emailOf(me.username);
+    mailStore.push({ id: pair+'-s', owner: me.username, folder: 'sent', from: '나', addr: fromAddr, to: emailOf(recipient.username), toName: recipient.name, subj, body: bodyText, time: '방금', read: true, star: false, createdAt: now, pair });
+    mailStore.push({ id: pair+'-r', owner: recipient.username, folder: 'inbox', from: me.name, addr: fromAddr, to: emailOf(recipient.username), subj, body: bodyText, time: '방금', read: false, star: false, createdAt: now, pair });
+    saveMail();
+    return send(res, 201, { ok: true });
+  }
+
+  if (pathname === '/api/mail/read' && method === 'POST') {
+    const b = await readJson(req); const m = mailStore.find(x => x.id === b.id && x.owner === me.username);
+    if (!m) return send(res, 404, { error: '메일을 찾을 수 없어요.' });
+    m.read = true; saveMail(); return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/mail/star' && method === 'POST') {
+    const b = await readJson(req); const m = mailStore.find(x => x.id === b.id && x.owner === me.username);
+    if (!m) return send(res, 404, { error: '메일을 찾을 수 없어요.' });
+    m.star = !!b.star; saveMail(); return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/mail/move-trash' && method === 'POST') {
+    const b = await readJson(req); const m = mailStore.find(x => x.id === b.id && x.owner === me.username);
+    if (!m) return send(res, 404, { error: '메일을 찾을 수 없어요.' });
+    if (m.folder === 'trash') mailStore = mailStore.filter(x => x !== m); else m.folder = 'trash';
+    saveMail(); return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/chat/people' && method === 'GET') {
+    const q = String(query.get('q') || '').trim().toLowerCase().slice(0,50);
+    const result = users.filter(u => u.username !== me.username)
+      .filter(u => !q || u.username.includes(q) || u.name.toLowerCase().includes(q))
+      .map(publicUser);
+    return send(res, 200, { users: result });
+  }
+
+  if (pathname === '/api/chat' && method === 'GET') {
+    const withUser = normUsername(query.get('with'));
+    const other = findUser(withUser);
+    if (!other || other.username === me.username) return send(res, 400, { error: '대화 상대를 찾을 수 없어요.' });
+    const items = chatStore.filter(m => (m.from === me.username && m.to === other.username) || (m.from === other.username && m.to === me.username));
+    return send(res, 200, { messages: items });
+  }
+
+  if (pathname === '/api/chat' && method === 'POST') {
+    const b = await readJson(req); const to = normUsername(b.to); const bodyText = String(b.body || '').trim().slice(0,4000);
+    const other = findUser(to);
+    if (!other || other.username === me.username) return send(res, 404, { error: '대화 상대를 찾을 수 없어요.' });
+    if (!bodyText) return send(res, 400, { error: '메시지를 입력하세요.' });
+    const msg = { id: chatId(), from: me.username, fromName: me.name, to: other.username, toName: other.name, body: bodyText, createdAt: new Date().toISOString() };
+    chatStore.push(msg); saveChat();
+    return send(res, 201, { message: msg });
+  }
+
+  if (pathname === '/api/search' && method === 'GET') {
+    const q = String(query.get('q') || '').trim().slice(0, 200);
+    if (!q) return send(res, 400, { error: '검색어를 입력하세요.' });
+    if (limited('search|' + me.username)) return send(res, 429, { error: '검색을 너무 자주 하고 있어요. 잠시 후 다시 시도하세요.' });
+    hit('search|' + me.username, 30, 60e3);
+    return send(res, 200, await webSearch(q));
+  }
+
+  if (pathname.startsWith('/api/admin/')) {
+    if (me.role !== 'admin') return send(res, 403, { error: '관리자만 사용할 수 있어요.' });
+    if (pathname === '/api/admin/users' && method === 'GET') return send(res, 200, { users: users.map(publicUser) });
+    const m = pathname.match(/^\/api\/admin\/users\/([a-z0-9._]+)$/);
+    if (m && method === 'DELETE') {
+      const t = findUser(m[1]);
+      if (!t) return send(res, 404, { error: '없는 사용자예요.' });
+      if (t.username === me.username) return send(res, 400, { error: '자기 자신은 삭제할 수 없어요.' });
+      users = users.filter((u) => u !== t); saveUsers();
+      mailStore = mailStore.filter(m => m.owner !== t.username && m.fromUser !== t.username && m.toUser !== t.username); saveMail();
+      chatStore = chatStore.filter(m => m.from !== t.username && m.to !== t.username); saveChat();
+      return send(res, 200, { ok: true });
+    }
+  }
+  return send(res, 404, { error: '없는 API예요.' });
+}
+
+/* ---------- 정적 파일 ---------- */
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
+function serveStatic(req, res, pathname) {
+  let rel; try { rel = decodeURIComponent(pathname); } catch { res.writeHead(400); return res.end(); }
+  if (rel === '/') rel = '/index.html';
+  const file = path.normalize(path.join(PUBLIC, rel));
+  if (file !== PUBLIC && !file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); return res.end('Forbidden'); }
+  fs.readFile(file, (err, buf) => {
+    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Not found'); }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.end(buf);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/api/')) return await api(req, res, url.pathname, url.searchParams);
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
+    return serveStatic(req, res, url.pathname);
+  } catch (e) {
+    if (e && e.status) return send(res, e.status, { error: e.message });
+    console.error(e);
+    return send(res, 500, { error: '서버 오류가 발생했어요.' });
+  }
+});
+
+/* ---------- 관리자 계정 생성 ---------- */
+(async () => {
+  const an = normUsername(process.env.ADMIN_USERNAME), ap = process.env.ADMIN_PASSWORD;
+  if (an && ap && !findUser(an)) {
+    const { salt, hash } = await hashPassword(ap);
+    users.push({ username: an, name: '관리자', salt, hash, role: 'admin', createdAt: new Date().toISOString() });
+    saveUsers();
+    console.log(`관리자 계정을 만들었어요: ${an}@${DOMAIN}`);
+  }
+  server.listen(PORT, () => {
+    console.log(`Ymail 실행 중 → http://localhost:${PORT}`);
+    console.log(pickProvider() ? `검색 서비스: ${pickProvider()}` : '참고: 검색 서비스(TAVILY_API_KEY 등)가 설정되지 않아 검색은 아직 동작하지 않아요.');
+  });
+})();
+).test(id)) return send(res, 400, { error: '잘못된 단어 항목이에요.' });
+    const entry = dictionaryStore.find(x => x.id === id);
+    if (!entry) return send(res, 404, { error: '단어 항목을 찾을 수 없어요.' });
+    entry.type = 'official';
+    entry.reviewedAt = new Date().toISOString();
+    entry.reviewedBy = me.username;
+    saveDictionary();
+    return send(res, 200, { entry });
+  }
 
   if (pathname === '/api/ai' && method === 'POST') {
     if (limited('yeole-ai|' + me.username)) return send(res, 429, { error: 'AI 요청이 너무 많아요. 잠시 후 다시 시도하세요.' });
