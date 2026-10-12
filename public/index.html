@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Ymail — Yeole Mail</title>
+<title>Yeole — 국어사전과 메일</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -247,7 +247,7 @@ main{min-height:0;min-width:0;position:relative}
         <path d="M6 18c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".7"/>
         <path d="M6 24c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".4"/>
       </svg>
-      <span>Ymail <small class="brand-name-full">Yeole Mail</small></span>
+      <span>Yeole <small class="brand-name-full">메일 · 채팅 · 국어사전</small></span>
     </div>
     <label class="search" id="searchBox">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
@@ -293,7 +293,7 @@ main{min-height:0;min-width:0;position:relative}
     <!-- YE OLE DICTIONARY -->
     <section class="view" id="v-dictionary">
       <div class="dictionary"><div class="dictionary-in">
-        <div class="dictionary-head"><div><h1>yeole 국어사전</h1><p>함께 뜻을 모으는 우리말 사전</p></div><div class="dict-head-actions"><span class="tag">Ymail 계정 연동</span><button class="btn" id="dictImportRetry" type="button" style="display:none">끝말왕 단어장 다시 동기화</button></div></div>
+        <div class="dictionary-head"><div><h1>yeole 국어사전</h1><p>함께 뜻을 모으는 우리말 사전</p></div><div class="dict-head-actions"><span class="tag">Yeole 계정 연동</span><button class="btn" id="dictImportRetry" type="button" style="display:none">끝말왕 단어장 다시 동기화</button></div></div>
         <form class="dict-search" id="dictSearch"><input id="dictQuery" type="search" placeholder="단어·뜻 검색 (예: 계* 또는 계*단)" aria-label="국어사전 검색"><button class="btn primary">검색</button></form>
         <p class="dict-search-hint">*는 글자 수와 상관없이 여러 글자를, ?는 글자 하나를 대신해요. 예: 계*는 ‘계’로 시작, *계는 ‘계’로 끝, *계*는 ‘계’를 포함, ?계는 앞에 한 글자, ??계는 앞에 두 글자, 계?는 뒤에 한 글자, 계??는 뒤에 두 글자, 계*단은 ‘계’로 시작해 ‘단’으로 끝나는 단어</p>
         <div class="dict-filters" role="group" aria-label="사전 항목 종류">
@@ -352,7 +352,7 @@ main{min-height:0;min-width:0;position:relative}
 <div id="auth" class="on"><form class="auth-card" id="authForm" novalidate>
   <div class="brand">
     <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--teal)"/><path d="M6 12c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round"/><path d="M6 18c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".7"/><path d="M6 24c3-3 5-3 8 0s5 3 8 0 3-2 4-1.5" fill="none" stroke="var(--teal-ink)" stroke-width="2.2" stroke-linecap="round" opacity=".4"/></svg>
-    <span>Ymail <small>Yeole Mail</small></span>
+    <span>Yeole <small>메일 · 국어사전</small></span>
   </div>
   <div class="seg" role="tablist"><button type="button" role="tab" id="tabLogin" aria-selected="true" onclick="setAuthMode('login')">로그인</button><button type="button" role="tab" id="tabSignup" aria-selected="false" onclick="setAuthMode('signup')">회원가입</button></div>
   <label class="field" id="fName" style="display:none"><span class="l">이름</span><input id="aName" autocomplete="name" maxlength="40"></label>
@@ -496,7 +496,7 @@ async function loadChatMessages(){
   }catch(e){toast(e.message)}
 }
 function renderChat(){
-  $('#contacts').innerHTML=people.length?people.map(p=>`<button class="contact" data-id="${esc(p.username)}" aria-current="${p.username===chatSel}"><span class="av">${esc(p.name?.[0]||p.username[0])}</span><span><span class="nm">${esc(p.name||p.username)}</span><br><span class="last">${esc(p.email)}</span></span></button>`).join(''):`<div class="empty">아직 다른 Ymail 사용자가 없어요.</div>`;
+  $('#contacts').innerHTML=people.length?people.map(p=>`<button class="contact" data-id="${esc(p.username)}" aria-current="${p.username===chatSel}"><span class="av">${esc(p.name?.[0]||p.username[0])}</span><span><span class="nm">${esc(p.name||p.username)}</span><br><span class="last">${esc(p.email)}</span></span></button>`).join(''):`<div class="empty">아직 다른 Yeole 사용자가 없어요.</div>`;
   $$('#contacts .contact').forEach(b=>b.onclick=async()=>{chatSel=b.dataset.id;$('#chatGrid').classList.add('open');await loadChatMessages()});
   const p=people.find(x=>x.username===chatSel);
   $('#threadName').textContent=p?(p.name||p.username):'대화 상대 없음';
@@ -555,7 +555,7 @@ function renderDictionary(){
   const note=$('#dictFormNote');
   const controls=$$('#dictForm input, #dictForm textarea, #dictForm select, #dictSubmit');
   if(!USER){
-    note.textContent='단어 등록은 Ymail 로그인 후 이용할 수 있어요. 검색은 로그인 없이 가능합니다.';
+    note.textContent='단어 등록은 Yeole 로그인 후 이용할 수 있어요. 검색은 로그인 없이 가능합니다.';
     controls.forEach(control=>control.disabled=true);
   }else{
     controls.forEach(control=>control.disabled=false);
