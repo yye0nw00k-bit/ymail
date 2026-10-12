@@ -1,5 +1,5 @@
 'use strict';
-// Yeole AI deployment sync
+// Yeole Mail + yeole 국어사전
 /**
  * Ymail server — 외부 패키지 없이 Node 18+ 만으로 동작합니다.
  *  - 회원가입 / 로그인 (scrypt 해시, 서명된 HttpOnly 쿠키)
@@ -28,12 +28,13 @@ const PORT = +process.env.PORT || 3000;
 const DOMAIN = process.env.MAIL_DOMAIN || 'ymail.com';
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const PUBLIC = path.join(__dirname, 'public');
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const MAIL_FILE = path.join(DATA_DIR, 'mail.json');
 const CHAT_FILE = path.join(DATA_DIR, 'chat.json');
 const DICTIONARY_FILE = path.join(DATA_DIR, 'dictionary.json');
+const VOCAB_IMPORT_FILE = path.join(DATA_DIR, 'vocabulary-imports.json');
 const SECRET_FILE = path.join(DATA_DIR, 'secret.key');
 
 let SECRET = process.env.SESSION_SECRET;
@@ -92,6 +93,90 @@ try {
 } catch (e) {
   console.error('끝말왕 기본 단어 목록을 읽지 못했어요:', e.message);
 }
+// 끝말왕에서 사용하던 공개 단어 목록을 백그라운드로 가져옵니다.
+// 외부 목록이 잠시 실패해도 내장 단어장과 사전 서비스는 계속 작동합니다.
+const GAME_WORD_SOURCES = [
+  {
+    name: '끝말왕 한국어 명사 목록',
+    url: 'https://gist.githubusercontent.com/A-H4NU/bb4fa141d2b89b1892f747ef923e3044/raw/2bf2ea339ac725910bee8d6fc0469a907105f514/beginner_korean_nouns.txt'
+  },
+  {
+    name: '끝말왕 고빈도 어휘 목록',
+    url: 'https://raw.githubusercontent.com/oprogramador/most-common-words-by-language/master/src/resources/korean.txt'
+  },
+  {
+    name: '끝말왕 확장 단어 목록',
+    url: 'https://raw.githubusercontent.com/acidsound/korean_wordlist/master/wordslistUnique.txt'
+  }
+];
+let vocabularyImportStatus = { state: '대기 중', importedWords: 0, sources: [] };
+let vocabularyImportState = {};
+try {
+  const saved = JSON.parse(fs.readFileSync(VOCAB_IMPORT_FILE, 'utf8'));
+  if (saved && typeof saved === 'object') vocabularyImportState = saved;
+} catch { /* 최초 실행 */ }
+
+async function importGameVocabulary() {
+  if (vocabularyImportStatus.state === '가져오는 중') return;
+  vocabularyImportStatus.state = '가져오는 중';
+  const now = Date.now();
+  const knownGameWords = new Set(
+    dictionaryStore
+      .filter(entry => entry.type === 'official' && String(entry.source || '').startsWith('끝말왕'))
+      .map(entry => String(entry.word || '').normalize('NFC'))
+  );
+  const skipWords = new Set(['그리고','하지만','그럼','정말','너무','어서','그래서','어떻게','무슨','이렇게','저렇게','그렇게']);
+  const results = [];
+  let totalAdded = 0;
+  for (const source of GAME_WORD_SOURCES) {
+    const previous = vocabularyImportState[source.url];
+    if (previous && previous.importedAt && now - Date.parse(previous.importedAt) < 30 * 864e5) {
+      results.push({ name: source.name, state: '이미 가져옴', added: Number(previous.added || 0) });
+      continue;
+    }
+    let timer;
+    try {
+      const controller = new AbortController();
+      timer = setTimeout(() => controller.abort(), 25000);
+      const response = await fetch(source.url, { signal: controller.signal, headers: { 'User-Agent': 'YeoleDictionary/1.0' } });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const text = await response.text();
+      const addedEntries = [];
+      for (const raw of text.split(/\r?\n|[,;\t]/)) {
+        const word = String(raw || '').replace(/^\s*[|]\s*/, '').replace(/^\s*[0-9]+[.)]\s*/, '').trim().normalize('NFC');
+        if (!/^[가-힣]{2,50}$/.test(word) || skipWords.has(word) || knownGameWords.has(word)) continue;
+        knownGameWords.add(word);
+        addedEntries.push({
+          id: crypto.randomBytes(12).toString('hex'),
+          word, definition: '', pos: '', example: '',
+          type: 'official', author: 'dictionary-import',
+          authorName: '끝말왕 단어장', source: source.name,
+          createdAt: new Date().toISOString()
+        });
+      }
+      if (addedEntries.length) {
+        dictionaryStore.push(...addedEntries);
+        saveDictionary();
+      }
+      totalAdded += addedEntries.length;
+      vocabularyImportState[source.url] = { importedAt: new Date().toISOString(), added: addedEntries.length };
+      saveStore(VOCAB_IMPORT_FILE, vocabularyImportState);
+      results.push({ name: source.name, state: '완료', added: addedEntries.length });
+    } catch (error) {
+      results.push({ name: source.name, state: '실패 — 기본 단어장은 사용 가능', added: 0 });
+      console.warn('끝말왕 단어 목록을 가져오지 못했어요:', source.name, error.message);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  vocabularyImportStatus = {
+    state: results.every(item => item.state === '완료' || item.state === '이미 가져옴') ? '완료' : '일부 목록 사용 불가',
+    importedWords: totalAdded,
+    sources: results
+  };
+  console.log('끝말왕 단어 목록 가져오기:', JSON.stringify(vocabularyImportStatus));
+}
+
 function mailId() { return crypto.randomBytes(12).toString('hex'); }
 function chatId() { return crypto.randomBytes(12).toString('hex'); }
 function emailOf(username) { return `${username}@${DOMAIN}`; }
@@ -293,14 +378,33 @@ async function api(req, res, pathname, query) {
   const me = currentUser(req);
   if (pathname === '/api/me' && method === 'GET') return me ? send(res, 200, { user: publicUser(me) }) : send(res, 401, { error: '로그인이 필요해요.' });
 
-  /* 사전 검색은 공개하고, 단어 등록·관리는 로그인 후에만 허용합니다. */
+  /* 사전 검색은 공개합니다. 큰 단어장도 빠르게 열리도록 페이지 단위로 반환합니다. */
+  if (pathname === '/api/dictionary/status' && method === 'GET') {
+    return send(res, 200, {
+      status: vocabularyImportStatus.state,
+      importedWords: vocabularyImportStatus.importedWords,
+      sources: vocabularyImportStatus.sources
+    });
+  }
+
   if (pathname === '/api/dictionary' && method === 'GET') {
-    const q = String(query.get('q') || '').trim().toLocaleLowerCase('ko-KR').slice(0, 100);
-    const items = dictionaryStore
-      .filter(entry => !q || [entry.word, entry.definition, entry.pos, entry.example, entry.authorName]
-        .some(value => String(value || '').toLocaleLowerCase('ko-KR').includes(q)))
-      .sort((a, b) => (a.type === b.type ? String(b.createdAt).localeCompare(String(a.createdAt)) : (a.type === 'official' ? -1 : 1)));
-    return send(res, 200, { entries: items });
+    const q = String(query.get('q') || '').trim().normalize('NFC').toLocaleLowerCase('ko-KR').slice(0, 100);
+    const type = ['official', 'open'].includes(query.get('type')) ? query.get('type') : 'all';
+    const page = Math.max(0, Math.min(100000, Number.parseInt(query.get('page') || '0', 10) || 0));
+    const limit = Math.max(10, Math.min(100, Number.parseInt(query.get('limit') || '40', 10) || 40));
+    const matches = dictionaryStore.filter(entry => {
+      if (type !== 'all' && entry.type !== type) return false;
+      if (!q) return true;
+      return [entry.word, entry.definition, entry.pos, entry.example, entry.authorName]
+        .some(value => String(value || '').normalize('NFC').toLocaleLowerCase('ko-KR').includes(q));
+    });
+    const rank = entry => (String(entry.definition || '').trim() ? 0 : 10) + (entry.type === 'official' ? 0 : 1);
+    matches.sort((a, b) => rank(a) - rank(b) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(a.word).localeCompare(String(b.word), 'ko'));
+    const start = page * limit;
+    return send(res, 200, {
+      entries: matches.slice(start, start + limit),
+      page, limit, total: matches.length, hasMore: start + limit < matches.length
+    });
   }
 
   if (!me) return send(res, 401, { error: '로그인이 필요해요.' });
@@ -308,11 +412,14 @@ async function api(req, res, pathname, query) {
   /* ---------- yeole 국어사전: 로그인한 유저의 등록·관리 ---------- */
   if (pathname === '/api/dictionary' && method === 'POST') {
     const b = await readJson(req);
-    const word = String(b.word || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    const word = String(b.word || '').trim().normalize('NFC').replace(/\s+/g, ' ').slice(0, 60);
     const definition = String(b.definition || '').trim().slice(0, 1200);
     const pos = String(b.pos || '').trim().slice(0, 30);
     const example = String(b.example || '').trim().slice(0, 500);
     if (!word || !definition) return send(res, 400, { error: '단어와 뜻을 입력하세요.' });
+    if (/[\u0000-\u001f\u007f]/.test(word)) return send(res, 400, { error: '단어에 사용할 수 없는 문자가 있어요.' });
+    const duplicate = dictionaryStore.some(entry => String(entry.word || '').normalize('NFC').toLocaleLowerCase('ko-KR') === word.toLocaleLowerCase('ko-KR') && String(entry.definition || '').trim().normalize('NFC').toLocaleLowerCase('ko-KR') === definition.normalize('NFC').toLocaleLowerCase('ko-KR'));
+    if (duplicate) return send(res, 409, { error: '같은 단어와 뜻이 이미 등록되어 있어요.' });
     if (limited('dictionary|' + me.username)) return send(res, 429, { error: '단어 등록을 너무 자주 하고 있어요. 잠시 후 다시 시도하세요.' });
     hit('dictionary|' + me.username, 8, 60e3);
     const entry = {
@@ -495,7 +602,7 @@ const server = http.createServer(async (req, res) => {
     const existing = findUser(an);
     if (!existing) {
       const { salt, hash } = await hashPassword(ap);
-      users.push({ username: an, name: '관리자', salt, hash, role: 'admin', createdAt: new Date().toISOString() });
+      users.push({ username: an, name: String(process.env.ADMIN_DISPLAY_NAME || '관리자').trim().slice(0, 40), salt, hash, role: 'admin', createdAt: new Date().toISOString() });
       saveUsers();
       console.log('관리자 계정을 만들었어요: ' + an + '@' + DOMAIN);
     } else if (existing.role !== 'admin' && await checkPassword(ap, existing)) {
@@ -507,5 +614,6 @@ const server = http.createServer(async (req, res) => {
   server.listen(PORT, () => {
     console.log(`Ymail 실행 중 → http://localhost:${PORT}`);
     console.log(pickProvider() ? `검색 서비스: ${pickProvider()}` : '참고: 검색 서비스(TAVILY_API_KEY 등)가 설정되지 않아 검색은 아직 동작하지 않아요.');
+    importGameVocabulary().catch(error => console.error('끝말왕 단어 가져오기 오류:', error.message));
   });
 })();
