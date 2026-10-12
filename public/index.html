@@ -706,7 +706,6 @@ async function boot(user){
   folder='inbox';sel=null;query='';$('#q').value='';chatSel='';chatMessages=[];
   await loadMails();await loadChatPeople();startChatPoll();
   tabs=[{id:++tabSeq,url:'ymail://start',title:'시작 페이지'}];tabSel=tabSeq;
-  aiLog=[{w:'ai',t:`안녕하세요, ${user.name}님! 무엇을 도와드릴까요?`}];
   $('#avatarBtn').textContent=user.name.trim().slice(0,1)||'나';
   $('#umName').textContent=user.name+(user.role==='admin'?' (관리자)':'');$('#umEmail').textContent=user.email;
   $('#umAdmin').style.display=user.role==='admin'?'':'none';
