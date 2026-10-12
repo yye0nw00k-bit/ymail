@@ -131,6 +131,7 @@ async function importGameVocabulary() {
   for (const source of GAME_WORD_SOURCES) {
     const previous = vocabularyImportState[source.url];
     if (previous && previous.importedAt && now - Date.parse(previous.importedAt) < 30 * 864e5) {
+      totalAdded += Number(previous.added || 0);
       results.push({ name: source.name, state: '이미 가져옴', added: Number(previous.added || 0) });
       continue;
     }
@@ -408,6 +409,13 @@ async function api(req, res, pathname, query) {
   }
 
   if (!me) return send(res, 401, { error: '로그인이 필요해요.' });
+
+  if (pathname === '/api/admin/dictionary/import-game-words' && method === 'POST') {
+    if (me.role !== 'admin') return send(res, 403, { error: '관리자만 단어장을 동기화할 수 있어요.' });
+    if (vocabularyImportStatus.state === '가져오는 중') return send(res, 409, { error: '이미 단어장을 가져오고 있어요.' });
+    importGameVocabulary().catch(error => console.error('끝말왕 단어 가져오기 오류:', error.message));
+    return send(res, 202, { ok: true, message: '끝말왕 단어장 동기화를 시작했어요.' });
+  }
 
   /* ---------- yeole 국어사전: 로그인한 유저의 등록·관리 ---------- */
   if (pathname === '/api/dictionary' && method === 'POST') {
