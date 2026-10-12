@@ -412,18 +412,33 @@ async function api(req, res, pathname, query) {
     const type = ['official', 'open'].includes(query.get('type')) ? query.get('type') : 'all';
     const page = Math.max(0, Math.min(100000, Number.parseInt(query.get('page') || '0', 10) || 0));
     const limit = Math.max(10, Math.min(100, Number.parseInt(query.get('limit') || '40', 10) || 40));
-    const hasWildcard = q.includes('*');
-    // *는 단어 안의 임의 길이 문자열을 뜻합니다. 와일드카드 검색은 단어 자체에만 적용합니다.
-    const escapeRegexPiece = part => {
-      let escaped = '';
-      for (const ch of part) {
-        if ('\\^$.*+?()[]{}|'.includes(ch)) escaped += '\\';
-        escaped += ch;
+    const hasWildcard = /[*?]/.test(q);
+    // 와일드카드 검색은 단어 자체에 적용하고, 일반 검색은 뜻·품사 등도 검색합니다.
+    function wildcardMatch(word, pattern) {
+      const target = String(word || '').normalize('NFC').toLocaleLowerCase('ko-KR');
+      let ti = 0, pi = 0, star = -1, retry = 0;
+      while (ti < target.length) {
+        if (pi < pattern.length && (pattern[pi] === '?' || pattern[pi] === target[ti])) {
+          ti++; pi++; continue;
+        }
+        if (pi < pattern.length && pattern[pi] === '*') {
+          star = pi++; retry = ti; continue;
+        }
+        if (star !== -1) {
+          pi = star + 1; ti = ++retry; continue;
+        }
+        return false;
       }
-      return escaped;
-    };
-    const wildcardPattern = hasWildcard
-      ? new RegExp('^' + q.split('*').map(escapeRegexPiece).join('.*') + '
+      while (pi < pattern.length && pattern[pi] === '*') pi++;
+      return pi === pattern.length;
+    }
+    const matches = dictionaryStore.filter(entry => {
+      if (type !== 'all' && entry.type !== type) return false;
+      if (!q) return true;
+      if (hasWildcard) return wildcardMatch(entry.word, q);
+      return [entry.word, entry.definition, entry.pos, entry.example, entry.authorName]
+        .some(value => String(value || '').normalize('NFC').toLocaleLowerCase('ko-KR').includes(q));
+    });
     const rank = entry => (String(entry.definition || '').trim() ? 0 : 10) + (entry.type === 'official' ? 0 : 1);
     matches.sort((a, b) => rank(a) - rank(b) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(a.word).localeCompare(String(b.word), 'ko'));
     const start = page * limit;
