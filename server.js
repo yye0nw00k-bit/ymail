@@ -99,11 +99,11 @@ const BULK_VOCABULARY_DIR = path.join(__dirname, 'vocabulary');
 let bulkVocabularyWords = [];
 try {
   const files = fs.readdirSync(BULK_VOCABULARY_DIR)
-    .filter(name => /^words-\\d{2}\\.txt$/.test(name))
+    .filter(name => /^words-\d{2}\.txt$/.test(name))
     .sort();
   for (const file of files) {
     const content = fs.readFileSync(path.join(BULK_VOCABULARY_DIR, file), 'utf8');
-    for (const raw of content.split(/\\r?\\n/)) {
+    for (const raw of content.split(/\r?\n/)) {
       const word = raw.trim().normalize('NFC');
       if (/^[가-힣]{1,50}$/.test(word)) bulkVocabularyWords.push(word);
     }
