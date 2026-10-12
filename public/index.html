@@ -646,7 +646,7 @@ function renderPage(){
   $('#addrIn').value=t.url==='ymail://start'?'':t.url;
   if(t.url==='ymail://start'){
     el.innerHTML=`<div class="page-in"><h2>어디로 갈까요?</h2><p style="color:var(--mute);margin:0">검색어나 주소를 위 주소창에 입력하세요.</p>
-    <div class="tiles">${[['메일','mail'],['채팅','chat'],['Yeol AI','ai']].map(([n,v])=>`<button class="tile" data-go="${v}"><b>${n}</b></button>`).join('')}
+    <div class="tiles">${[['메일','mail'],['채팅','chat'],['국어사전','dictionary']].map(([n,v])=>`<button class="tile" data-go="${v}"><b>${n}</b></button>`).join('')}
     <button class="tile" data-open="https://www.wikipedia.org"><b>위키백과</b></button></div></div>`;
     $$('#page [data-go]').forEach(b=>b.onclick=()=>show(b.dataset.go));
     $$('#page [data-open]').forEach(b=>b.onclick=()=>navigate(b.dataset.open));
