@@ -143,6 +143,13 @@ main{min-height:0;min-width:0;position:relative}
 .dictionary-head h1{font-size:clamp(25px,4vw,34px);letter-spacing:-.04em;margin:0}
 .dictionary-head p{color:var(--mute);margin:5px 0 0}
 .dict-search{display:flex;gap:8px;margin:18px 0 22px}
+.dict-filters{display:flex;gap:7px;flex-wrap:wrap;margin:-7px 0 8px}
+.dict-filter{border:1px solid var(--line);background:transparent;color:var(--mute);padding:7px 12px;border-radius:999px;cursor:pointer;font-size:12px}
+.dict-filter.active{background:var(--tint);border-color:var(--teal);color:var(--teal);font-weight:700}
+.dict-source-note{font-size:12px;color:var(--mute);margin:0 0 14px;min-height:16px}
+.dict-more-wrap{display:flex;justify-content:center;padding:18px 0}
+.dict-more{width:100%;justify-content:center}
+.dict-form :disabled{opacity:.55;cursor:not-allowed}
 .dict-search input,.dict-form input,.dict-form textarea,.dict-form select{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:11px 13px;outline:0}
 .dict-search input:focus,.dict-form input:focus,.dict-form textarea:focus,.dict-form select:focus{border-color:var(--teal)}
 .dict-search input{border-radius:999px;padding:0 18px;height:44px}
@@ -286,6 +293,12 @@ main{min-height:0;min-width:0;position:relative}
       <div class="dictionary"><div class="dictionary-in">
         <div class="dictionary-head"><div><h1>yeole 국어사전</h1><p>함께 뜻을 모으는 우리말 사전</p></div><span class="tag">Ymail 계정 연동</span></div>
         <form class="dict-search" id="dictSearch"><input id="dictQuery" type="search" placeholder="단어, 뜻, 품사 검색" aria-label="국어사전 검색"><button class="btn primary">검색</button></form>
+        <div class="dict-filters" role="group" aria-label="사전 항목 종류">
+          <button class="dict-filter active" type="button" data-dict-type="all">전체</button>
+          <button class="dict-filter" type="button" data-dict-type="official">공식 사전</button>
+          <button class="dict-filter" type="button" data-dict-type="open">오픈사전</button>
+        </div>
+        <p class="dict-source-note" id="dictSourceNote" aria-live="polite">끝말왕 단어장을 준비하고 있어요.</p>
         <div class="dict-layout"><div class="dict-results" id="dictResults"><div class="dict-empty">사전을 불러오는 중…</div></div>
           <form class="dict-form" id="dictForm"><h2>단어 등록</h2><p id="dictFormNote">일반 계정이 등록한 항목은 비공식 오픈사전으로 표시됩니다.</p>
             <label for="dictWord">단어 *</label><input id="dictWord" maxlength="60" required placeholder="예: 끝말왕">
@@ -498,32 +511,71 @@ function startChatPoll(){clearInterval(chatPoll);chatPoll=setInterval(()=>{if(US
 /* ---------- yeole 국어사전 ---------- */
 let dictionaryEntries=[];
 let dictionaryQuery='';
-async function loadDictionary(){
+let dictionaryType='all';
+let dictionaryPage=0;
+let dictionaryHasMore=false;
+let dictionaryTotal=0;
+let dictionaryLoading=false;
+async function loadDictionary(options={}){
+  const append=!!options.append;
+  if(dictionaryLoading)return;
+  dictionaryLoading=true;
   const box=$('#dictResults');
-  box.innerHTML='<div class="dict-empty">사전을 불러오는 중…</div>';
+  if(!append)box.innerHTML='<div class="dict-empty">사전을 불러오는 중…</div>';
   try{
-    const r=await api('/api/dictionary?q='+encodeURIComponent(dictionaryQuery));
-    dictionaryEntries=r.entries||[];
+    const page=append?dictionaryPage+1:0;
+    const params=new URLSearchParams({q:dictionaryQuery,type:dictionaryType,page:String(page),limit:'40'});
+    const r=await api('/api/dictionary?'+params.toString());
+    dictionaryPage=r.page||0;
+    dictionaryHasMore=!!r.hasMore;
+    dictionaryTotal=Number(r.total||0);
+    dictionaryEntries=append?dictionaryEntries.concat(r.entries||[]):(r.entries||[]);
     renderDictionary();
-  }catch(e){box.innerHTML='<div class="dict-empty">'+esc(e.message)+'</div>'}
+    refreshDictionaryStatus();
+  }catch(e){
+    if(!append)box.innerHTML='<div class="dict-empty">'+esc(e.message)+'</div>';
+    else toast(e.message);
+  }finally{dictionaryLoading=false}
+}
+async function refreshDictionaryStatus(){
+  const note=$('#dictSourceNote');
+  try{
+    const s=await api('/api/dictionary/status');
+    if(s.status==='가져오는 중')note.textContent='끝말왕 확장 단어장을 가져오는 중이에요. 기본 단어는 먼저 검색할 수 있어요.';
+    else if(s.status==='완료')note.textContent='끝말왕 단어장 연결 완료 · 현재 검색 결과 '+dictionaryTotal.toLocaleString('ko-KR')+'개';
+    else if(s.status==='일부 목록 사용 불가')note.textContent='일부 외부 단어장은 연결되지 않았어요. 내장 단어와 이미 가져온 단어는 정상 이용할 수 있어요.';
+    else note.textContent='현재 검색 결과 '+dictionaryTotal.toLocaleString('ko-KR')+'개';
+  }catch(e){note.textContent='현재 검색 결과 '+dictionaryTotal.toLocaleString('ko-KR')+'개'}
 }
 function renderDictionary(){
   const box=$('#dictResults');
-  $('#dictFormNote').textContent=USER&&USER.role==='admin'
-    ?'관리자 계정으로 등록하면 공식 단어가 됩니다. 오픈사전 항목도 공식 단어로 승격할 수 있어요.'
-    :'일반 계정이 등록한 항목은 비공식 오픈사전으로 표시됩니다.';
-  const items=dictionaryEntries;
-  if(!items.length){box.innerHTML='<div class="dict-empty">검색 결과가 없어요. 첫 번째 단어를 등록해 보세요.</div>';return}
-  box.innerHTML=items.map(entry=>{
+  const note=$('#dictFormNote');
+  const controls=$$('#dictForm input, #dictForm textarea, #dictForm select, #dictSubmit');
+  if(!USER){
+    note.textContent='단어 등록은 Ymail 로그인 후 이용할 수 있어요. 검색은 로그인 없이 가능합니다.';
+    controls.forEach(control=>control.disabled=true);
+  }else{
+    controls.forEach(control=>control.disabled=false);
+    note.textContent=USER.role==='admin'
+      ?'관리자 계정으로 등록하면 공식 단어가 됩니다. 오픈사전 항목도 공식 단어로 승격할 수 있어요.'
+      :'일반 계정이 등록한 항목은 비공식 오픈사전으로 표시됩니다.';
+  }
+  $$('.dict-filter').forEach(button=>button.classList.toggle('active',button.dataset.dictType===dictionaryType));
+  if(!dictionaryEntries.length){
+    box.innerHTML='<div class="dict-empty">검색 결과가 없어요. '+(USER?'첫 번째 단어를 등록해 보세요.':'로그인 후 첫 번째 단어를 등록할 수 있어요.')+'</div>';
+    return;
+  }
+  box.innerHTML=dictionaryEntries.map(entry=>{
     const official=entry.type==='official';
     const canDelete=USER&&(USER.role==='admin'||entry.author===USER.username);
+    const source=entry.source?(' · '+esc(entry.source)):'';
     return '<article class="dict-entry"><div class="dict-word">'+esc(entry.word)+'<span class="dict-kind '+(official?'official':'open')+'">'+(official?'공식 단어':'비공식 오픈사전')+'</span></div>'+
-      '<div class="dict-meta">'+(entry.pos?esc(entry.pos)+' · ':'')+'작성자 '+esc(entry.authorName||entry.author||'알 수 없음')+' · '+esc((entry.createdAt||'').slice(0,10))+'</div>'+
+      '<div class="dict-meta">'+(entry.pos?esc(entry.pos)+' · ':'')+'작성자 '+esc(entry.authorName||entry.author||'알 수 없음')+source+(entry.createdAt?' · '+esc(String(entry.createdAt).slice(0,10)):'')+'</div>'+
       (entry.definition?'<div class="dict-definition">'+esc(entry.definition)+'</div>':'<div class="dict-definition dict-no-definition">뜻이 아직 등록되지 않았어요.</div>')+
       (entry.example?'<div class="dict-example">예문 · '+esc(entry.example)+'</div>':'')+
       (canDelete||(USER&&USER.role==='admin'&&!official)?'<div class="dict-entry-actions">'+(USER&&USER.role==='admin'&&!official?'<button class="btn" data-promote="'+esc(entry.id)+'">공식 단어로 승격</button>':'')+(canDelete?'<button class="btn" data-dict-delete="'+esc(entry.id)+'">삭제</button>':'')+'</div>':'')+
       '</article>';
-  }).join('');
+  }).join('')+(dictionaryHasMore?'<div class="dict-more-wrap"><button class="btn dict-more" type="button" data-dict-more>더 많은 단어 보기</button></div>':'');
   $('[data-dict-delete]',box).forEach(btn=>btn.onclick=async()=>{
     if(!confirm('이 사전 항목을 삭제할까요?'))return;
     try{await api('/api/dictionary/'+encodeURIComponent(btn.dataset.dictDelete),{method:'DELETE'});toast('항목을 삭제했어요');await loadDictionary()}catch(e){toast(e.message)}
@@ -531,18 +583,29 @@ function renderDictionary(){
   $('[data-promote]',box).forEach(btn=>btn.onclick=async()=>{
     try{await api('/api/admin/dictionary/'+encodeURIComponent(btn.dataset.promote)+'/official',{method:'POST',body:{}});toast('공식 단어로 승격했어요');await loadDictionary()}catch(e){toast(e.message)}
   });
+  const more=$('[data-dict-more]',box);
+  if(more)more.onclick=()=>loadDictionary({append:true});
 }
-$('#dictSearch').onsubmit=async e=>{e.preventDefault();dictionaryQuery=$('#dictQuery').value.trim();await loadDictionary()};
+$('#dictSearch').onsubmit=async e=>{
+  e.preventDefault();
+  dictionaryQuery=$('#dictQuery').value.trim().normalize('NFC');
+  await loadDictionary();
+};
+$$('.dict-filter').forEach(button=>button.onclick=async()=>{
+  dictionaryType=button.dataset.dictType||'all';
+  await loadDictionary();
+});
 $('#dictForm').onsubmit=async e=>{
   e.preventDefault();
+  if(!USER){toast('단어 등록은 먼저 로그인해 주세요.');return}
   const btn=$('#dictSubmit');btn.disabled=true;
   try{
     await api('/api/dictionary',{method:'POST',body:{
-      word:$('#dictWord').value.trim(),pos:$('#dictPos').value,
+      word:$('#dictWord').value.trim().normalize('NFC'),pos:$('#dictPos').value,
       definition:$('#dictDefinition').value.trim(),example:$('#dictExample').value.trim()
     }});
     toast(USER.role==='admin'?'공식 단어를 등록했어요':'오픈사전 단어를 등록했어요');
-    $('#dictForm').reset();$('#dictQuery').value='';dictionaryQuery='';await loadDictionary();
+    $('#dictForm').reset();$('#dictQuery').value='';dictionaryQuery='';dictionaryType='all';await loadDictionary();
   }catch(e){toast(e.message)}
   finally{btn.disabled=false}
 };
