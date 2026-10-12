@@ -571,7 +571,7 @@ function renderDictionary(){
   }
   box.innerHTML=dictionaryEntries.map(entry=>{
     const official=entry.type==='official';
-    const canDelete=USER&&(USER.role==='admin'||entry.author===USER.username);
+    const canDelete=USER&&entry.source!=='끝말왕 대규모 단어장'&&(USER.role==='admin'||entry.author===USER.username);
     const source=entry.source?(' · '+esc(entry.source)):'';
     return '<article class="dict-entry"><div class="dict-word">'+esc(entry.word)+'<span class="dict-kind '+(official?'official':'open')+'">'+(official?'공식 단어':'비공식 오픈사전')+'</span></div>'+
       '<div class="dict-meta">'+(entry.pos?esc(entry.pos)+' · ':'')+'작성자 '+esc(entry.authorName||entry.author||'알 수 없음')+source+(entry.createdAt?' · '+esc(String(entry.createdAt).slice(0,10)):'')+'</div>'+
